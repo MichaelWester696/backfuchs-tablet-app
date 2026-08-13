@@ -32,16 +32,22 @@ class _HomeShellState extends State<HomeShell> {
     return Scaffold(
       appBar: AppBar(title: Text(widget.posten.name)),
       body: IndexedStack(index: _index, children: screens),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _index,
-        onTap: (i) => setState(() => _index = i),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.checklist), label: 'Aufgaben'),
-          BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Rezepte'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Nachrichten'),
-          BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Bestand'),
-          BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
-        ],
+      // SafeArea sorgt dafür, dass die Leiste auf einem iPhone ohne Home-Button
+      // (X und neuer) oberhalb der unteren Wisch-Geste-Zone bleibt, statt darunter
+      // zu verschwinden bzw. mit ihr zu überlappen.
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: BottomNavigationBar(
+          currentIndex: _index,
+          onTap: (i) => setState(() => _index = i),
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.checklist), label: 'Aufgaben'),
+            BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Rezepte'),
+            BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Nachrichten'),
+            BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Bestand'),
+            BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
+          ],
+        ),
       ),
     );
   }
