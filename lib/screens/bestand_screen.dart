@@ -65,35 +65,54 @@ class _BestandScreenState extends State<BestandScreen> {
                 children: [
                   const Text('Bestandszählung erfassen', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: TextField(
-                          controller: _produktController,
-                          decoration: const InputDecoration(labelText: 'Produkt'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: TextField(
-                          controller: _mengeController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'Menge'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: DropdownButtonFormField<String>(
-                          value: _einheit,
-                          items: _einheiten.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                          onChanged: (v) => setState(() => _einheit = v ?? _einheit),
-                          decoration: const InputDecoration(labelText: 'Einheit'),
-                        ),
-                      ),
-                    ],
+                  // Auf schmalen Bildschirmen (z.B. iPhone) passen Produkt, Menge und
+                  // Einheit nicht mehr nebeneinander in eine Zeile, ohne dass Beschriftungen
+                  // abgeschnitten werden. Deshalb hier je nach verfügbarer Breite entweder
+                  // eine Zeile (Tablet) oder zwei gestapelte Zeilen (Handy) anzeigen.
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final produktFeld = TextField(
+                        controller: _produktController,
+                        decoration: const InputDecoration(labelText: 'Produkt'),
+                      );
+                      final mengeFeld = TextField(
+                        controller: _mengeController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(labelText: 'Menge'),
+                      );
+                      final einheitFeld = DropdownButtonFormField<String>(
+                        value: _einheit,
+                        items: _einheiten.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                        onChanged: (v) => setState(() => _einheit = v ?? _einheit),
+                        decoration: const InputDecoration(labelText: 'Einheit'),
+                      );
+
+                      if (constraints.maxWidth >= 500) {
+                        return Row(
+                          children: [
+                            Expanded(flex: 3, child: produktFeld),
+                            const SizedBox(width: 12),
+                            Expanded(flex: 2, child: mengeFeld),
+                            const SizedBox(width: 12),
+                            Expanded(flex: 2, child: einheitFeld),
+                          ],
+                        );
+                      }
+
+                      return Column(
+                        children: [
+                          produktFeld,
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(child: mengeFeld),
+                              const SizedBox(width: 12),
+                              Expanded(child: einheitFeld),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
