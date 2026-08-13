@@ -55,12 +55,18 @@ class _PostenLoginScreenState extends State<PostenLoginScreen> {
                   child: Text('Für welchen Posten ist dieses Tablet?', style: TextStyle(fontSize: 22)),
                 ),
                 Expanded(
-                  child: GridView.count(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 1.4,
-                    children: posten.map((p) => _PostenKachel(posten: p)).toList(),
+                  // Passt die Spaltenzahl automatisch an die Bildschirmbreite an:
+                  // schmales iPhone bekommt 1-2 Spalten, ein Tablet 3-5, statt
+                  // fest auf 3 Spalten zu bestehen und die Kacheln zu quetschen.
+                  child: GridView.builder(
+                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 220,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      childAspectRatio: 1.4,
+                    ),
+                    itemCount: posten.length,
+                    itemBuilder: (context, i) => _PostenKachel(posten: posten[i]),
                   ),
                 ),
               ],
