@@ -6,16 +6,33 @@ import 'package:image_picker/image_picker.dart';
 import '../models/defekt.dart';
 import '../models/posten.dart';
 import '../services/supabase_service.dart';
+import 'technik_defekt_ansicht.dart';
 
-class DefektScreen extends StatefulWidget {
+/// Für den festen Posten "Technik" zeigt dieser Screen die
+/// Defekt-Verwaltungsansicht (alle Defekte, Offen/Erledigt), für alle
+/// anderen Posten das normale Meldeformular mit eigenen Meldungen.
+class DefektScreen extends StatelessWidget {
   final Posten posten;
   const DefektScreen({super.key, required this.posten});
 
   @override
-  State<DefektScreen> createState() => _DefektScreenState();
+  Widget build(BuildContext context) {
+    if (posten.name == 'Technik') {
+      return const TechnikDefektAnsicht();
+    }
+    return _DefektMeldenAnsicht(posten: posten);
+  }
 }
 
-class _DefektScreenState extends State<DefektScreen> {
+class _DefektMeldenAnsicht extends StatefulWidget {
+  final Posten posten;
+  const _DefektMeldenAnsicht({required this.posten});
+
+  @override
+  State<_DefektMeldenAnsicht> createState() => _DefektMeldenAnsichtState();
+}
+
+class _DefektMeldenAnsichtState extends State<_DefektMeldenAnsicht> {
   final _maschineController = TextEditingController();
   final _beschreibungController = TextEditingController();
   XFile? _foto;

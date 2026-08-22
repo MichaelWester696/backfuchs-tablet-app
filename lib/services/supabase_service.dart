@@ -189,6 +189,44 @@ class SupabaseService {
     return (rows as List).map((r) => Defekt.fromJson(r as Map<String, dynamic>)).toList();
   }
 
+  /// Alle Defekte über alle Posten hinweg (für die Technik-Verwaltungsansicht).
+  Future<List<Defekt>> ladeAlleDefekte() async {
+    final rows = await _client
+        .from('defekte')
+        .select('*, posten:posten_id(name)')
+        .order('gemeldet_am');
+    return (rows as List).map((r) => Defekt.fromJson(r as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> markiereDefektErledigt(String defektId) async {
+    await _client.from('defekte').update({
+      'status': 'behoben',
+      'behoben_am': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', defektId);
+  }
+
+  // ---------------------------------------------------------------------
+  // Schichtabschluss
+  // ---------------------------------------------------------------------
+  Future<bool> pruefeSchichtAbgeschlossen(String postenId) async {
+    final heute = DateTime.now().toIso8601String().split('T').first;
+    final row = await _client
+        .from('schicht_abschluesse')
+        .select('id')
+        .eq('posten_id', postenId)
+        .eq('datum', heute)
+        .maybeSingle();
+    return row != null;
+  }
+
+  Future<void> schliesseSchichtAb(String postenId) async {
+    final heute = DateTime.now().toIso8601String().split('T').first;
+    await _client.from('schicht_abschluesse').upsert(
+      {'posten_id': postenId, 'datum': heute},
+      onConflict: 'posten_id,datum',
+    );
+  }
+
   // ---------------------------------------------------------------------
   // Backstubenleitung-Zugang (PIN-geschützt)
   // ---------------------------------------------------------------------

@@ -15,11 +15,44 @@ class AufgabenScreen extends StatefulWidget {
 
 class _AufgabenScreenState extends State<AufgabenScreen> {
   late Stream<List<Aufgabe>> _stream;
+  bool _pruefeSchichtLaeuft = true;
+  bool _schichtAbgeschlossen = false;
 
   @override
   void initState() {
     super.initState();
     _stream = SupabaseService.instance.aufgabenStream(widget.posten.id);
+    _ladeSchichtStatus();
+  }
+
+  Future<void> _ladeSchichtStatus() async {
+    final abgeschlossen = await SupabaseService.instance.pruefeSchichtAbgeschlossen(widget.posten.id);
+    if (mounted) {
+      setState(() {
+        _schichtAbgeschlossen = abgeschlossen;
+        _pruefeSchichtLaeuft = false;
+      });
+    }
+  }
+
+  Future<void> _schichtAbschliessen() async {
+    final bestaetigt = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Schicht abschließen?'),
+        content: const Text(
+          'Damit wird die Backstubenleitung informiert. Noch nicht erledigte Aufgaben von heute '
+          'werden im Führungsdashboard hervorgehoben, damit kurzfristig nachgefasst werden kann.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Abbrechen')),
+          ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Schicht abschließen')),
+        ],
+      ),
+    );
+    if (bestaetigt != true || !mounted) return;
+    await SupabaseService.instance.schliesseSchichtAb(widget.posten.id);
+    if (mounted) setState(() => _schichtAbgeschlossen = true);
   }
 
   bool _istHeute(Aufgabe a) {
@@ -35,30 +68,58 @@ class _AufgabenScreenState extends State<AufgabenScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Aufgabe>>(
-      stream: _stream,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final aufgaben = snapshot.data!.where(_istHeute).toList()
-          ..sort((a, b) {
-            const rang = {'hoch': 0, 'normal': 1, 'niedrig': 2};
-            final r = (rang[a.dringlichkeit] ?? 1).compareTo(rang[b.dringlichkeit] ?? 1);
-            if (r != 0) return r;
-            return (a.uhrzeit ?? '99:99').compareTo(b.uhrzeit ?? '99:99');
-          });
+    return Column(
+      children: [
+        Expanded(
+          child: StreamBuilder<List<Aufgabe>>(
+            stream: _stream,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final aufgaben = snapshot.data!.where(_istHeute).toList()
+                ..sort((a, b) {
+                  const rang = {'hoch': 0, 'normal': 1, 'niedrig': 2};
+                  final r = (rang[a.dringlichkeit] ?? 1).compareTo(rang[b.dringlichkeit] ?? 1);
+                  if (r != 0) return r;
+                  return (a.uhrzeit ?? '99:99').compareTo(b.uhrzeit ?? '99:99');
+                });
 
-        if (aufgaben.isEmpty) {
-          return const Center(child: Text('Keine Aufgaben für heute. 🎉', style: TextStyle(fontSize: 20)));
-        }
+              if (aufgaben.isEmpty) {
+                return const Center(child: Text('Keine Aufgaben für heute. 🎉', style: TextStyle(fontSize: 20)));
+              }
 
-        return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: aufgaben.length,
-          itemBuilder: (context, i) => _AufgabenKarte(aufgabe: aufgaben[i], onBestaetigen: _bestaetigen),
-        );
-      },
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: aufgaben.length,
+                itemBuilder: (context, i) => _AufgabenKarte(aufgabe: aufgaben[i], onBestaetigen: _bestaetigen),
+              );
+            },
+          ),
+        ),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: _pruefeSchichtLaeuft
+                  ? const SizedBox.shrink()
+                  : _schichtAbgeschlossen
+                      ? const OutlinedButton.icon(
+                          onPressed: null,
+                          icon: Icon(Icons.check_circle, color: BackfuchsFarben.gruen),
+                          label: Text('Schicht heute abgeschlossen'),
+                        )
+                      : OutlinedButton.icon(
+                          onPressed: _schichtAbschliessen,
+                          icon: const Icon(Icons.logout),
+                          label: const Text('Schicht abschließen'),
+                        ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
