@@ -59,6 +59,32 @@ class Rezept {
     return zutat.menge * (zielStueckzahl / basisStueckzahl);
   }
 
+  /// Gesamtgewicht der Basis-Rezeptmenge in kg, berechnet aus allen
+  /// gewichtsbasierten Zutaten (g/kg). Zutaten in anderen Einheiten (z.B.
+  /// Stück, l) fließen hier nicht ein, werden aber beim Skalieren trotzdem
+  /// mit demselben Faktor mitskaliert (siehe umgerechneteMengeNachGewicht) -
+  /// es ist ja dieselbe Teigmenge, nur anders gemessen.
+  double get basisGewichtKg {
+    double summeKg = 0;
+    for (final z in zutaten) {
+      if (z.einheit == 'kg') {
+        summeKg += z.menge;
+      } else if (z.einheit == 'g') {
+        summeKg += z.menge / 1000;
+      }
+    }
+    return summeKg;
+  }
+
+  /// Rechnet eine Zutatenmenge auf ein Zielgewicht (kg) der gesamten
+  /// Rezeptmenge um. Nur sinnvoll nutzbar, wenn basisGewichtKg > 0 ist (also
+  /// mindestens eine Zutat in g/kg angegeben ist).
+  double umgerechneteMengeNachGewicht(Zutat zutat, double zielGewichtKg) {
+    final basis = basisGewichtKg;
+    if (basis == 0) return zutat.menge;
+    return zutat.menge * (zielGewichtKg / basis);
+  }
+
   /// Formatiert eine Menge inkl. Einheiten-Intelligenz (g -> kg ab 1000g,
   /// ml -> l ab 1000ml), analog zur Web-Oberfläche.
   String formatiereMenge(double menge, String einheit) {

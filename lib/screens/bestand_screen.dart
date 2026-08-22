@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
+import '../models/bestand_produkt.dart';
 import '../models/posten.dart';
 import '../services/supabase_service.dart';
 
@@ -12,42 +14,55 @@ class BestandScreen extends StatefulWidget {
 }
 
 class _BestandScreenState extends State<BestandScreen> {
-  final _produktController = TextEditingController();
   final _mengeController = TextEditingController();
-  String _einheit = 'Stück';
-  late Future<List<Map<String, dynamic>>> _bestandFuture;
+  BestandProdukt? _ausgewaehltesProdukt;
+  bool _wirdGespeichert = false;
+  String? _fehlermeldung;
 
-  final _einheiten = const ['Stück', 'kg', 'g', 'l', 'Blech', 'Kiste'];
+  late Future<List<BestandProdukt>> _produkteFuture;
+  late Future<List<BestandEintrag>> _bestandFuture;
 
   @override
   void initState() {
     super.initState();
-    _bestandFuture = SupabaseService.instance.ladeBestandHeute(widget.posten.id);
+    _produkteFuture = SupabaseService.instance.ladeBestandProdukte();
+    _bestandFuture = SupabaseService.instance.ladeBestandAktuell(widget.posten.id);
   }
 
   void _neuLaden() {
-    setState(() => _bestandFuture = SupabaseService.instance.ladeBestandHeute(widget.posten.id));
+    setState(() => _bestandFuture = SupabaseService.instance.ladeBestandAktuell(widget.posten.id));
   }
 
   Future<void> _speichern() async {
-    final produkt = _produktController.text.trim();
+    final produkt = _ausgewaehltesProdukt;
     final menge = double.tryParse(_mengeController.text.replaceAll(',', '.'));
-    if (produkt.isEmpty || menge == null) return;
+    if (produkt == null || menge == null) {
+      setState(() => _fehlermeldung = 'Bitte Produkt auswählen und eine gültige Menge eingeben.');
+      return;
+    }
 
-    await SupabaseService.instance.erfasseBestandszaehlung(
-      postenId: widget.posten.id,
-      produktName: produkt,
-      menge: menge,
-      einheit: _einheit,
-    );
-    _produktController.clear();
-    _mengeController.clear();
-    _neuLaden();
+    setState(() {
+      _wirdGespeichert = true;
+      _fehlermeldung = null;
+    });
+    try {
+      await SupabaseService.instance.erfasseBestandszaehlung(
+        postenId: widget.posten.id,
+        produkt: produkt,
+        menge: menge,
+      );
+      _mengeController.clear();
+      setState(() => _ausgewaehltesProdukt = null);
+      _neuLaden();
+    } catch (e) {
+      setState(() => _fehlermeldung = 'Speichern fehlgeschlagen: $e');
+    } finally {
+      if (mounted) setState(() => _wirdGespeichert = false);
+    }
   }
 
   @override
   void dispose() {
-    _produktController.dispose();
     _mengeController.dispose();
     super.dispose();
   }
@@ -64,60 +79,102 @@ class _BestandScreenState extends State<BestandScreen> {
               child: Column(
                 children: [
                   const Text('Bestandszählung erfassen', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Ein erneutes Speichern überschreibt den bisherigen Wert für dieses Produkt.',
+                    style: TextStyle(fontSize: 13, color: Colors.black54),
+                    textAlign: TextAlign.center,
+                  ),
                   const SizedBox(height: 12),
-                  // Auf schmalen Bildschirmen (z.B. iPhone) passen Produkt, Menge und
-                  // Einheit nicht mehr nebeneinander in eine Zeile, ohne dass Beschriftungen
-                  // abgeschnitten werden. Deshalb hier je nach verfügbarer Breite entweder
-                  // eine Zeile (Tablet) oder zwei gestapelte Zeilen (Handy) anzeigen.
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final produktFeld = TextField(
-                        controller: _produktController,
-                        decoration: const InputDecoration(labelText: 'Produkt'),
-                      );
-                      final mengeFeld = TextField(
-                        controller: _mengeController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: 'Menge'),
-                      );
-                      final einheitFeld = DropdownButtonFormField<String>(
-                        value: _einheit,
-                        items: _einheiten.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                        onChanged: (v) => setState(() => _einheit = v ?? _einheit),
-                        decoration: const InputDecoration(labelText: 'Einheit'),
-                      );
-
-                      if (constraints.maxWidth >= 500) {
-                        return Row(
-                          children: [
-                            Expanded(flex: 3, child: produktFeld),
-                            const SizedBox(width: 12),
-                            Expanded(flex: 2, child: mengeFeld),
-                            const SizedBox(width: 12),
-                            Expanded(flex: 2, child: einheitFeld),
-                          ],
+                  FutureBuilder<List<BestandProdukt>>(
+                    future: _produkteFuture,
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: CircularProgressIndicator(),
                         );
                       }
+                      final produkte = snapshot.data!;
+                      if (produkte.isEmpty) {
+                        return const Text(
+                          'Noch keine Produkte hinterlegt. Bitte im Führungsdashboard unter\n"Bestandsprodukte verwalten" anlegen.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.black54),
+                        );
+                      }
+                      // Referenz aktualisieren, falls z.B. der Name sich seit
+                      // dem letzten Laden geändert hat (oder das Produkt
+                      // zwischenzeitlich deaktiviert wurde).
+                      if (_ausgewaehltesProdukt != null) {
+                        BestandProdukt? gefunden;
+                        for (final p in produkte) {
+                          if (p.id == _ausgewaehltesProdukt!.id) {
+                            gefunden = p;
+                            break;
+                          }
+                        }
+                        _ausgewaehltesProdukt = gefunden;
+                      }
+                      return LayoutBuilder(
+                        builder: (context, constraints) {
+                          final produktFeld = DropdownButtonFormField<BestandProdukt>(
+                            value: _ausgewaehltesProdukt,
+                            isExpanded: true,
+                            items: produkte
+                                .map((p) => DropdownMenuItem(value: p, child: Text('${p.name} (${p.einheit})')))
+                                .toList(),
+                            onChanged: (p) => setState(() => _ausgewaehltesProdukt = p),
+                            decoration: const InputDecoration(labelText: 'Produkt'),
+                          );
+                          final mengeFeld = TextField(
+                            controller: _mengeController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(
+                              labelText: 'Menge',
+                              suffixText: _ausgewaehltesProdukt?.einheit,
+                            ),
+                          );
 
-                      return Column(
-                        children: [
-                          produktFeld,
-                          const SizedBox(height: 12),
-                          Row(
+                          if (constraints.maxWidth >= 500) {
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(flex: 3, child: produktFeld),
+                                const SizedBox(width: 12),
+                                Expanded(flex: 2, child: mengeFeld),
+                              ],
+                            );
+                          }
+                          return Column(
                             children: [
-                              Expanded(child: mengeFeld),
-                              const SizedBox(width: 12),
-                              Expanded(child: einheitFeld),
+                              produktFeld,
+                              const SizedBox(height: 12),
+                              mengeFeld,
                             ],
-                          ),
-                        ],
+                          );
+                        },
                       );
                     },
                   ),
+                  if (_fehlermeldung != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(_fehlermeldung!, style: const TextStyle(color: Colors.red)),
+                    ),
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
-                    child: ElevatedButton(onPressed: _speichern, child: const Text('Hinzufügen')),
+                    child: ElevatedButton(
+                      onPressed: _wirdGespeichert ? null : _speichern,
+                      child: _wirdGespeichert
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Speichern'),
+                    ),
                   ),
                 ],
               ),
@@ -126,7 +183,7 @@ class _BestandScreenState extends State<BestandScreen> {
         ),
         const Divider(),
         Expanded(
-          child: FutureBuilder<List<Map<String, dynamic>>>(
+          child: FutureBuilder<List<BestandEintrag>>(
             future: _bestandFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
@@ -134,15 +191,19 @@ class _BestandScreenState extends State<BestandScreen> {
               }
               final eintraege = snapshot.data ?? [];
               if (eintraege.isEmpty) {
-                return const Center(child: Text('Heute noch keine Zählung erfasst.'));
+                return const Center(child: Text('Noch keine Zählung erfasst.'));
               }
               return ListView.builder(
                 itemCount: eintraege.length,
                 itemBuilder: (context, i) {
                   final e = eintraege[i];
                   return ListTile(
-                    title: Text(e['produkt_name'] as String),
-                    trailing: Text('${e['menge']} ${e['einheit']}', style: const TextStyle(fontSize: 18)),
+                    title: Text(e.produktName),
+                    subtitle: Text(
+                      'Stand: ${DateFormat('dd.MM. HH:mm').format(e.aktualisiertAm.toLocal())} Uhr',
+                      style: const TextStyle(fontSize: 12, color: Colors.black45),
+                    ),
+                    trailing: Text('${e.menge} ${e.einheit}', style: const TextStyle(fontSize: 18)),
                   );
                 },
               );

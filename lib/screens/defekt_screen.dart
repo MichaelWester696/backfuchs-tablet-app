@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -19,7 +19,14 @@ class _DefektScreenState extends State<DefektScreen> {
   final _maschineController = TextEditingController();
   final _beschreibungController = TextEditingController();
   XFile? _foto;
+  // Bytes werden direkt beim Aufnehmen einmal eingelesen und im State gehalten.
+  // Wichtig für Web (PWA): dart:io File funktioniert im Browser nicht, weder
+  // zum erneuten Einlesen noch für die Vorschau (Image.file) - deshalb hier
+  // ausschließlich mit Bytes + Image.memory arbeiten, das läuft auf allen
+  // Plattformen (Android, iOS, Web) gleich.
+  Uint8List? _fotoBytes;
   bool _wirdGesendet = false;
+  String? _fehlermeldung;
   late Future<List<Defekt>> _defekteFuture;
 
   @override
@@ -37,7 +44,12 @@ class _DefektScreenState extends State<DefektScreen> {
 
   Future<void> _fotoAufnehmen() async {
     final foto = await ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 1600, imageQuality: 80);
-    if (foto != null) setState(() => _foto = foto);
+    if (foto == null) return;
+    final bytes = await foto.readAsBytes();
+    setState(() {
+      _foto = foto;
+      _fotoBytes = bytes;
+    });
   }
 
   void _neuLaden() {
@@ -49,12 +61,14 @@ class _DefektScreenState extends State<DefektScreen> {
     final beschreibung = _beschreibungController.text.trim();
     if (maschine.isEmpty || beschreibung.isEmpty) return;
 
-    setState(() => _wirdGesendet = true);
+    setState(() {
+      _wirdGesendet = true;
+      _fehlermeldung = null;
+    });
     try {
       String? fotoUrl;
-      if (_foto != null) {
-        final bytes = await File(_foto!.path).readAsBytes();
-        fotoUrl = await SupabaseService.instance.ladeDefektFotoUrl(_foto!.name, bytes);
+      if (_foto != null && _fotoBytes != null) {
+        fotoUrl = await SupabaseService.instance.ladeDefektFotoUrl(_foto!.name, _fotoBytes!);
       }
       await SupabaseService.instance.meldeDefekt(
         postenId: widget.posten.id,
@@ -64,8 +78,14 @@ class _DefektScreenState extends State<DefektScreen> {
       );
       _maschineController.clear();
       _beschreibungController.clear();
-      setState(() => _foto = null);
+      setState(() {
+        _foto = null;
+        _fotoBytes = null;
+      });
       _neuLaden();
+    } catch (e) {
+      // Fehler nicht mehr lautlos verschlucken, sondern sichtbar machen.
+      setState(() => _fehlermeldung = 'Senden fehlgeschlagen: $e');
     } finally {
       if (mounted) setState(() => _wirdGesendet = false);
     }
@@ -106,19 +126,24 @@ class _DefektScreenState extends State<DefektScreen> {
                   decoration: const InputDecoration(labelText: 'Was ist defekt?'),
                 ),
                 const SizedBox(height: 12),
-                if (_foto != null)
+                if (_fotoBytes != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.file(File(_foto!.path), height: 160, fit: BoxFit.cover),
+                      child: Image.memory(_fotoBytes!, height: 160, fit: BoxFit.cover),
                     ),
                   ),
                 OutlinedButton.icon(
                   onPressed: _fotoAufnehmen,
                   icon: const Icon(Icons.camera_alt),
-                  label: Text(_foto == null ? 'Foto aufnehmen' : 'Foto ändern'),
+                  label: Text(_fotoBytes == null ? 'Foto aufnehmen' : 'Foto ändern'),
                 ),
+                if (_fehlermeldung != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(_fehlermeldung!, style: const TextStyle(color: Colors.red)),
+                  ),
                 const SizedBox(height: 12),
                 ElevatedButton(
                   onPressed: _wirdGesendet ? null : _senden,

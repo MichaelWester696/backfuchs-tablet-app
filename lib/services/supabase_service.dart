@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/aufgabe.dart';
+import '../models/bestand_produkt.dart';
 import '../models/defekt.dart';
 import '../models/nachricht.dart';
 import '../models/posten.dart';
@@ -105,29 +106,50 @@ class SupabaseService {
   // ---------------------------------------------------------------------
   // Bestandszählung
   // ---------------------------------------------------------------------
-  Future<void> erfasseBestandszaehlung({
-    required String postenId,
-    required String produktName,
-    required double menge,
-    required String einheit,
-  }) async {
-    await _client.from('bestandszaehlungen').insert({
-      'posten_id': postenId,
-      'produkt_name': produktName,
-      'menge': menge,
-      'einheit': einheit,
-    });
+  /// Fester, im Dashboard gepflegter Produktkatalog für die Bestandszählung.
+  Future<List<BestandProdukt>> ladeBestandProdukte() async {
+    final rows = await _client
+        .from('bestand_produkte')
+        .select()
+        .eq('aktiv', true)
+        .order('reihenfolge');
+    return (rows as List).map((r) => BestandProdukt.fromJson(r as Map<String, dynamic>)).toList();
   }
 
-  Future<List<Map<String, dynamic>>> ladeBestandHeute(String postenId) async {
-    final heute = DateTime.now().toIso8601String().split('T').first;
+  /// Erfasst eine Zählung. Es wird immer nur der neueste Wert je
+  /// (Posten, Produkt) gehalten - ein erneutes Speichern überschreibt die
+  /// vorherige Zählung, statt eine neue Zeile anzulegen.
+  Future<void> erfasseBestandszaehlung({
+    required String postenId,
+    required BestandProdukt produkt,
+    required double menge,
+  }) async {
+    await _client.from('bestandszaehlungen').upsert(
+      {
+        'posten_id': postenId,
+        'produkt_id': produkt.id,
+        'produkt_name': produkt.name,
+        'menge': menge,
+        'einheit': produkt.einheit,
+        'aktualisiert_am': DateTime.now().toUtc().toIso8601String(),
+      },
+      onConflict: 'posten_id,produkt_id',
+    );
+  }
+
+  /// Aktueller Bestand eines Postens - eine Zeile je Produkt (immer der
+  /// neueste Wert, siehe Upsert oben).
+  Future<List<BestandEintrag>> ladeBestandAktuell(String postenId) async {
     final rows = await _client
         .from('bestandszaehlungen')
-        .select()
+        .select('*, bestand_produkte(name, einheit, reihenfolge)')
         .eq('posten_id', postenId)
-        .eq('gezaehlt_am', heute)
-        .order('erstellt_am', ascending: false);
-    return (rows as List).cast<Map<String, dynamic>>();
+        .not('produkt_id', 'is', null);
+    final eintraege = (rows as List)
+        .map((r) => BestandEintrag.fromJson(r as Map<String, dynamic>))
+        .toList();
+    eintraege.sort((a, b) => a.produktName.compareTo(b.produktName));
+    return eintraege;
   }
 
   // ---------------------------------------------------------------------
@@ -160,5 +182,21 @@ class SupabaseService {
         .eq('posten_id', postenId)
         .order('gemeldet_am', ascending: false);
     return (rows as List).map((r) => Defekt.fromJson(r as Map<String, dynamic>)).toList();
+  }
+
+  // ---------------------------------------------------------------------
+  // Backstubenleitung-Zugang (PIN-geschützt)
+  // ---------------------------------------------------------------------
+  /// Prüft den eingegebenen PIN gegen app_einstellungen.leitung_pin. Der PIN
+  /// wird bewusst nicht clientseitig geändert (keine offene Schreib-Policy) -
+  /// nur direkt in Supabase, siehe Kommentar in Migration 0002.
+  Future<bool> pruefeLeitungsPin(String eingegebenerPin) async {
+    final row = await _client
+        .from('app_einstellungen')
+        .select('wert')
+        .eq('schluessel', 'leitung_pin')
+        .maybeSingle();
+    if (row == null) return false;
+    return (row['wert'] as String) == eingegebenerPin;
   }
 }
