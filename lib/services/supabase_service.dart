@@ -241,4 +241,14 @@ class SupabaseService {
     );
     return ergebnis as bool;
   }
+
+  /// PIN-Prüfung für den Posten "Technik" (eigener PIN, ebenfalls über eine
+  /// serverseitige Funktion, siehe Migration 0008).
+  Future<bool> pruefeTechnikPin(String eingegebenerPin) async {
+    final ergebnis = await _client.rpc(
+      'pruefe_technik_pin',
+      params: {'eingabe': eingegebenerPin},
+    );
+    return ergebnis as bool;
+  }
 }

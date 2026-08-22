@@ -21,13 +21,35 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    final screens = [
-      AufgabenScreen(posten: widget.posten),
-      RezepteScreen(posten: widget.posten),
-      KommunikationScreen(posten: widget.posten),
-      BestandScreen(posten: widget.posten),
-      DefektScreen(posten: widget.posten),
-    ];
+    // Der Posten "Technik" verwaltet Defekte über alle Posten hinweg und
+    // braucht Rezepte/Bestand/Aufgaben nicht - daher nur Defekte + Nachrichten.
+    final istTechnik = widget.posten.name == 'Technik';
+
+    final screens = istTechnik
+        ? [
+            DefektScreen(posten: widget.posten),
+            KommunikationScreen(posten: widget.posten),
+          ]
+        : [
+            AufgabenScreen(posten: widget.posten),
+            RezepteScreen(posten: widget.posten),
+            KommunikationScreen(posten: widget.posten),
+            BestandScreen(posten: widget.posten),
+            DefektScreen(posten: widget.posten),
+          ];
+
+    final navItems = istTechnik
+        ? const [
+            BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
+            BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Nachrichten'),
+          ]
+        : const [
+            BottomNavigationBarItem(icon: Icon(Icons.checklist), label: 'Aufgaben'),
+            BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Rezepte'),
+            BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Nachrichten'),
+            BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Bestand'),
+            BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
+          ];
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.posten.name)),
@@ -40,13 +62,7 @@ class _HomeShellState extends State<HomeShell> {
         child: BottomNavigationBar(
           currentIndex: _index,
           onTap: (i) => setState(() => _index = i),
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.checklist), label: 'Aufgaben'),
-            BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Rezepte'),
-            BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Nachrichten'),
-            BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Bestand'),
-            BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
-          ],
+          items: navItems,
         ),
       ),
     );

@@ -31,7 +31,7 @@ class _PostenLoginScreenState extends State<PostenLoginScreen> {
   Future<void> _backstubenleitungOeffnen() async {
     final pin = await showDialog<String>(
       context: context,
-      builder: (_) => const _PinDialog(),
+      builder: (_) => const _PinDialog(titel: 'PIN für Backstubenleitung'),
     );
     if (pin == null || !mounted) return;
 
@@ -52,6 +52,37 @@ class _PostenLoginScreenState extends State<PostenLoginScreen> {
         const SnackBar(content: Text('Dashboard konnte nicht geöffnet werden.')),
       );
     }
+  }
+
+  /// Der Posten "Technik" ist zusätzlich per eigenem PIN geschützt, da er
+  /// Zugriff auf alle Defekte (nicht nur die eigenen) hat.
+  Future<void> _postenAuswaehlen(Posten posten) async {
+    if (posten.name != 'Technik') {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => HomeShell(posten: posten)),
+      );
+      return;
+    }
+
+    final pin = await showDialog<String>(
+      context: context,
+      builder: (_) => const _PinDialog(titel: 'PIN für Technik'),
+    );
+    if (pin == null || !mounted) return;
+
+    final korrekt = await SupabaseService.instance.pruefeTechnikPin(pin);
+    if (!mounted) return;
+
+    if (!korrekt) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Falscher PIN.')),
+      );
+      return;
+    }
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => HomeShell(posten: posten)),
+    );
   }
 
   @override
@@ -97,7 +128,10 @@ class _PostenLoginScreenState extends State<PostenLoginScreen> {
                       childAspectRatio: 1.4,
                     ),
                     itemCount: posten.length,
-                    itemBuilder: (context, i) => _PostenKachel(posten: posten[i]),
+                    itemBuilder: (context, i) => _PostenKachel(
+                      posten: posten[i],
+                      onTap: () => _postenAuswaehlen(posten[i]),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -117,18 +151,15 @@ class _PostenLoginScreenState extends State<PostenLoginScreen> {
 
 class _PostenKachel extends StatelessWidget {
   final Posten posten;
-  const _PostenKachel({required this.posten});
+  final VoidCallback onTap;
+  const _PostenKachel({required this.posten, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => HomeShell(posten: posten)),
-          );
-        },
+        onTap: onTap,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -147,7 +178,8 @@ class _PostenKachel extends StatelessWidget {
 /// Einfacher PIN-Eingabedialog. Gibt den eingegebenen PIN als String zurück
 /// (Prüfung erfolgt im Aufrufer gegen Supabase), oder null bei Abbruch.
 class _PinDialog extends StatefulWidget {
-  const _PinDialog();
+  final String titel;
+  const _PinDialog({required this.titel});
 
   @override
   State<_PinDialog> createState() => _PinDialogState();
@@ -165,7 +197,7 @@ class _PinDialogState extends State<_PinDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('PIN für Backstubenleitung'),
+      title: Text(widget.titel),
       content: TextField(
         controller: _pinController,
         keyboardType: TextInputType.number,
