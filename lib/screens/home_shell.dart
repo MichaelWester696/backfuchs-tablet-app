@@ -25,6 +25,8 @@ class _HomeShellState extends State<HomeShell> {
     // braucht Rezepte/Bestand/Aufgaben nicht - daher nur Defekte + Nachrichten.
     final istTechnik = widget.posten.name == 'Technik';
 
+    final zeigtRezepte = widget.posten.zeigtRezepte;
+
     final screens = istTechnik
         ? [
             DefektScreen(posten: widget.posten),
@@ -32,7 +34,7 @@ class _HomeShellState extends State<HomeShell> {
           ]
         : [
             AufgabenScreen(posten: widget.posten),
-            RezepteScreen(posten: widget.posten),
+            if (zeigtRezepte) RezepteScreen(posten: widget.posten),
             KommunikationScreen(posten: widget.posten),
             BestandScreen(posten: widget.posten),
             DefektScreen(posten: widget.posten),
@@ -43,12 +45,12 @@ class _HomeShellState extends State<HomeShell> {
             BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
             BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Nachrichten'),
           ]
-        : const [
-            BottomNavigationBarItem(icon: Icon(Icons.checklist), label: 'Aufgaben'),
-            BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Rezepte'),
-            BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Nachrichten'),
-            BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Bestand'),
-            BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
+        : [
+            const BottomNavigationBarItem(icon: Icon(Icons.checklist), label: 'Aufgaben'),
+            if (zeigtRezepte) const BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Rezepte'),
+            const BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Nachrichten'),
+            const BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Bestand'),
+            const BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
           ];
 
     return Scaffold(

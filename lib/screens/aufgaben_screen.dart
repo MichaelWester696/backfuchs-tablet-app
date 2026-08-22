@@ -4,6 +4,7 @@ import '../models/aufgabe.dart';
 import '../models/posten.dart';
 import '../services/supabase_service.dart';
 import '../theme.dart';
+import 'posten_login_screen.dart';
 
 class AufgabenScreen extends StatefulWidget {
   final Posten posten;
@@ -52,7 +53,12 @@ class _AufgabenScreenState extends State<AufgabenScreen> {
     );
     if (bestaetigt != true || !mounted) return;
     await SupabaseService.instance.schliesseSchichtAb(widget.posten.id);
-    if (mounted) setState(() => _schichtAbgeschlossen = true);
+    if (!mounted) return;
+    // Zurück zur Posten-Auswahl, damit das Tablet für den nächsten Posten
+    // bzw. die nächste Schicht bereit ist.
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const PostenLoginScreen()),
+    );
   }
 
   bool _istHeute(Aufgabe a) {

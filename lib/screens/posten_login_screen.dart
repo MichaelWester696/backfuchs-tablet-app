@@ -46,7 +46,16 @@ class _PostenLoginScreenState extends State<PostenLoginScreen> {
     }
 
     final url = Uri.parse(_dashboardUrl);
-    final geoeffnet = await launchUrl(url, mode: LaunchMode.externalApplication);
+    // webOnlyWindowName: '_self' statt eines neuen Tabs (externalApplication):
+    // Safari auf iOS blockiert das Öffnen eines neuen Tabs/Fensters, sobald
+    // dazwischen ein await lag (hier der PIN-Check gegen Supabase) - ohne
+    // Fehlermeldung, das Öffnen passiert einfach lautlos nicht. Navigation
+    // im selben Tab umgeht diese Popup-Blocker-Einschränkung zuverlässig.
+    final geoeffnet = await launchUrl(
+      url,
+      mode: LaunchMode.externalApplication,
+      webOnlyWindowName: '_self',
+    );
     if (!geoeffnet && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Dashboard konnte nicht geöffnet werden.')),
