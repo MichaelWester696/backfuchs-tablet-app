@@ -16,6 +16,7 @@ class BestandScreen extends StatefulWidget {
 class _BestandScreenState extends State<BestandScreen> {
   final _mengeController = TextEditingController();
   BestandProdukt? _ausgewaehltesProdukt;
+  Traeger _ausgewaehlterTraeger = Traeger.blech;
   bool _wirdGespeichert = false;
   String? _fehlermeldung;
 
@@ -49,6 +50,7 @@ class _BestandScreenState extends State<BestandScreen> {
       await SupabaseService.instance.erfasseBestandszaehlung(
         postenId: widget.posten.id,
         produkt: produkt,
+        traeger: _ausgewaehlterTraeger,
         menge: menge,
       );
       _mengeController.clear();
@@ -122,18 +124,23 @@ class _BestandScreenState extends State<BestandScreen> {
                             value: _ausgewaehltesProdukt,
                             isExpanded: true,
                             items: produkte
-                                .map((p) => DropdownMenuItem(value: p, child: Text('${p.name} (${p.einheit})')))
+                                .map((p) => DropdownMenuItem(value: p, child: Text(p.name)))
                                 .toList(),
                             onChanged: (p) => setState(() => _ausgewaehltesProdukt = p),
                             decoration: const InputDecoration(labelText: 'Produkt'),
                           );
+                          final traegerFeld = SegmentedButton<Traeger>(
+                            segments: const [
+                              ButtonSegment(value: Traeger.blech, label: Text('Blech')),
+                              ButtonSegment(value: Traeger.diele, label: Text('Diele')),
+                            ],
+                            selected: {_ausgewaehlterTraeger},
+                            onSelectionChanged: (sel) => setState(() => _ausgewaehlterTraeger = sel.first),
+                          );
                           final mengeFeld = TextField(
                             controller: _mengeController,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: InputDecoration(
-                              labelText: 'Menge',
-                              suffixText: _ausgewaehltesProdukt?.einheit,
-                            ),
+                            decoration: const InputDecoration(labelText: 'Menge'),
                           );
 
                           if (constraints.maxWidth >= 500) {
@@ -142,6 +149,8 @@ class _BestandScreenState extends State<BestandScreen> {
                               children: [
                                 Expanded(flex: 3, child: produktFeld),
                                 const SizedBox(width: 12),
+                                traegerFeld,
+                                const SizedBox(width: 12),
                                 Expanded(flex: 2, child: mengeFeld),
                               ],
                             );
@@ -149,6 +158,8 @@ class _BestandScreenState extends State<BestandScreen> {
                           return Column(
                             children: [
                               produktFeld,
+                              const SizedBox(height: 12),
+                              traegerFeld,
                               const SizedBox(height: 12),
                               mengeFeld,
                             ],
@@ -198,12 +209,12 @@ class _BestandScreenState extends State<BestandScreen> {
                 itemBuilder: (context, i) {
                   final e = eintraege[i];
                   return ListTile(
-                    title: Text(e.produktName),
+                    title: Text('${e.produktName} (${e.traeger})'),
                     subtitle: Text(
                       'Stand: ${DateFormat('dd.MM. HH:mm').format(e.aktualisiertAm.toLocal())} Uhr',
                       style: const TextStyle(fontSize: 12, color: Colors.black45),
                     ),
-                    trailing: Text('${e.menge} ${e.einheit}', style: const TextStyle(fontSize: 18)),
+                    trailing: Text('${e.menge}', style: const TextStyle(fontSize: 18)),
                   );
                 },
               );

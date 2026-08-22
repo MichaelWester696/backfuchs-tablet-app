@@ -117,11 +117,13 @@ class SupabaseService {
   }
 
   /// Erfasst eine Zählung. Es wird immer nur der neueste Wert je
-  /// (Posten, Produkt) gehalten - ein erneutes Speichern überschreibt die
-  /// vorherige Zählung, statt eine neue Zeile anzulegen.
+  /// (Posten, Produkt, Träger) gehalten - ein erneutes Speichern überschreibt
+  /// die vorherige Zählung für denselben Träger, statt eine neue Zeile
+  /// anzulegen. Blech und Diele desselben Produkts sind unabhängige Zeilen.
   Future<void> erfasseBestandszaehlung({
     required String postenId,
     required BestandProdukt produkt,
+    required Traeger traeger,
     required double menge,
   }) async {
     await _client.from('bestandszaehlungen').upsert(
@@ -129,26 +131,29 @@ class SupabaseService {
         'posten_id': postenId,
         'produkt_id': produkt.id,
         'produkt_name': produkt.name,
+        'traeger': traeger.wert,
         'menge': menge,
-        'einheit': produkt.einheit,
         'aktualisiert_am': DateTime.now().toUtc().toIso8601String(),
       },
-      onConflict: 'posten_id,produkt_id',
+      onConflict: 'posten_id,produkt_id,traeger',
     );
   }
 
-  /// Aktueller Bestand eines Postens - eine Zeile je Produkt (immer der
-  /// neueste Wert, siehe Upsert oben).
+  /// Aktueller Bestand eines Postens - eine Zeile je Produkt und Träger
+  /// (immer der neueste Wert, siehe Upsert oben).
   Future<List<BestandEintrag>> ladeBestandAktuell(String postenId) async {
     final rows = await _client
         .from('bestandszaehlungen')
-        .select('*, bestand_produkte(name, einheit, reihenfolge)')
+        .select('*, bestand_produkte(name, reihenfolge)')
         .eq('posten_id', postenId)
         .not('produkt_id', 'is', null);
     final eintraege = (rows as List)
         .map((r) => BestandEintrag.fromJson(r as Map<String, dynamic>))
         .toList();
-    eintraege.sort((a, b) => a.produktName.compareTo(b.produktName));
+    eintraege.sort((a, b) {
+      final nameVergleich = a.produktName.compareTo(b.produktName);
+      return nameVergleich != 0 ? nameVergleich : a.traeger.compareTo(b.traeger);
+    });
     return eintraege;
   }
 
