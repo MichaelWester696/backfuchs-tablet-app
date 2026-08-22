@@ -106,10 +106,10 @@ class _AufgabenScreenState extends State<AufgabenScreen> {
               child: _pruefeSchichtLaeuft
                   ? const SizedBox.shrink()
                   : _schichtAbgeschlossen
-                      ? const OutlinedButton.icon(
+                      ? OutlinedButton.icon(
                           onPressed: null,
-                          icon: Icon(Icons.check_circle, color: BackfuchsFarben.gruen),
-                          label: Text('Schicht heute abgeschlossen'),
+                          icon: const Icon(Icons.check_circle, color: BackfuchsFarben.gruen),
+                          label: const Text('Schicht heute abgeschlossen'),
                         )
                       : OutlinedButton.icon(
                           onPressed: _schichtAbschliessen,
