@@ -85,8 +85,13 @@ class _AufgabenScreenState extends State<AufgabenScreen> {
               }
               final aufgaben = snapshot.data!.where(_istHeute).toList()
                 ..sort((a, b) {
-                  const rang = {'hoch': 0, 'normal': 1, 'niedrig': 2};
-                  final r = (rang[a.dringlichkeit] ?? 1).compareTo(rang[b.dringlichkeit] ?? 1);
+                  // Einmalige Aufgaben immer oben, danach die vom Dashboard aus
+                  // einstellbare Reihenfolge (Wecker-Wochentage erzeugen die
+                  // wiederkehrenden Aufgaben, quelle=system).
+                  if (a.wiederkehrend != b.wiederkehrend) {
+                    return a.wiederkehrend ? 1 : -1;
+                  }
+                  final r = a.reihenfolge.compareTo(b.reihenfolge);
                   if (r != 0) return r;
                   return (a.uhrzeit ?? '99:99').compareTo(b.uhrzeit ?? '99:99');
                 });

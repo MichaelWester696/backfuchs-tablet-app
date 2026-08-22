@@ -9,6 +9,7 @@ class Aufgabe {
   final String status; // 'offen' | 'erledigt'
   final bool wiederkehrend;
   final String quelle; // 'manuell' | 'whatsapp' | 'system'
+  final int reihenfolge; // manuell im Dashboard einstellbar
 
   Aufgabe({
     required this.id,
@@ -21,6 +22,7 @@ class Aufgabe {
     required this.status,
     required this.wiederkehrend,
     required this.quelle,
+    required this.reihenfolge,
   });
 
   bool get erledigt => status == 'erledigt';
@@ -36,6 +38,7 @@ class Aufgabe {
         status: json['status'] as String? ?? 'offen',
         wiederkehrend: json['wiederkehrend'] as bool? ?? false,
         quelle: json['quelle'] as String? ?? 'manuell',
+        reihenfolge: json['reihenfolge'] as int? ?? 0,
       );
 
   String get uhrzeitKurz {
