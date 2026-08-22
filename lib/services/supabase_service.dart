@@ -187,16 +187,15 @@ class SupabaseService {
   // ---------------------------------------------------------------------
   // Backstubenleitung-Zugang (PIN-geschützt)
   // ---------------------------------------------------------------------
-  /// Prüft den eingegebenen PIN gegen app_einstellungen.leitung_pin. Der PIN
-  /// wird bewusst nicht clientseitig geändert (keine offene Schreib-Policy) -
-  /// nur direkt in Supabase, siehe Kommentar in Migration 0002.
+  /// Prüft den eingegebenen PIN über die serverseitige Funktion
+  /// `pruefe_leitung_pin` (Migration 0003). Die Tabelle app_einstellungen
+  /// selbst ist für Clients nicht mehr lesbar, damit der PIN nicht per
+  /// direktem REST-Query abgefragt werden kann.
   Future<bool> pruefeLeitungsPin(String eingegebenerPin) async {
-    final row = await _client
-        .from('app_einstellungen')
-        .select('wert')
-        .eq('schluessel', 'leitung_pin')
-        .maybeSingle();
-    if (row == null) return false;
-    return (row['wert'] as String) == eingegebenerPin;
+    final ergebnis = await _client.rpc(
+      'pruefe_leitung_pin',
+      params: {'eingabe': eingegebenerPin},
+    );
+    return ergebnis as bool;
   }
 }
