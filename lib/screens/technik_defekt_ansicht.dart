@@ -43,6 +43,47 @@ class _TechnikDefektAnsichtState extends State<TechnikDefektAnsicht> {
     }
   }
 
+  void _detailPopupZeigen(Defekt d) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.all(20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${d.maschine} — ${d.postenName ?? "?"}',
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
+                  ],
+                ),
+                if (d.fotoUrl != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.network(d.fotoUrl!, fit: BoxFit.contain),
+                    ),
+                  ),
+                Text(d.beschreibung, style: const TextStyle(fontSize: 18)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -87,6 +128,7 @@ class _TechnikDefektAnsichtState extends State<TechnikDefektAnsicht> {
                   final d = gefiltert[i];
                   return Card(
                     child: ListTile(
+                      onTap: () => _detailPopupZeigen(d),
                       leading: d.fotoUrl != null
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(6),

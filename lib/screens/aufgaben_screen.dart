@@ -5,6 +5,7 @@ import '../models/posten.dart';
 import '../services/supabase_service.dart';
 import '../theme.dart';
 import 'posten_login_screen.dart';
+import 'rezept_detail_screen.dart';
 
 class AufgabenScreen extends StatefulWidget {
   final Posten posten;
@@ -72,6 +73,20 @@ class _AufgabenScreenState extends State<AufgabenScreen> {
     await SupabaseService.instance.aufgabeBestaetigen(a.id);
   }
 
+  Future<void> _zuRezeptSpringen(String rezeptId) async {
+    final rezept = await SupabaseService.instance.ladeRezeptById(rezeptId);
+    if (!mounted) return;
+    if (rezept == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Verknüpftes Rezept wurde nicht gefunden.')),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => RezeptDetailScreen(rezept: rezept)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -103,7 +118,11 @@ class _AufgabenScreenState extends State<AufgabenScreen> {
               return ListView.builder(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 itemCount: aufgaben.length,
-                itemBuilder: (context, i) => _AufgabenKarte(aufgabe: aufgaben[i], onBestaetigen: _bestaetigen),
+                itemBuilder: (context, i) => _AufgabenKarte(
+                  aufgabe: aufgaben[i],
+                  onBestaetigen: _bestaetigen,
+                  onRezeptSpringen: _zuRezeptSpringen,
+                ),
               );
             },
           ),
@@ -138,8 +157,13 @@ class _AufgabenScreenState extends State<AufgabenScreen> {
 class _AufgabenKarte extends StatelessWidget {
   final Aufgabe aufgabe;
   final Future<void> Function(Aufgabe) onBestaetigen;
+  final Future<void> Function(String rezeptId) onRezeptSpringen;
 
-  const _AufgabenKarte({required this.aufgabe, required this.onBestaetigen});
+  const _AufgabenKarte({
+    required this.aufgabe,
+    required this.onBestaetigen,
+    required this.onRezeptSpringen,
+  });
 
   Color get _dringlichkeitsFarbe {
     switch (aufgabe.dringlichkeit) {
@@ -190,6 +214,19 @@ class _AufgabenKarte extends StatelessWidget {
                 ),
               ],
             ),
+            if (aufgabe.rezeptId != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                  ),
+                  onPressed: () => onRezeptSpringen(aufgabe.rezeptId!),
+                  icon: const Icon(Icons.menu_book, size: 16),
+                  label: const Text('Zum Rezept'),
+                ),
+              ),
           ],
         ),
         trailing: aufgabe.erledigt

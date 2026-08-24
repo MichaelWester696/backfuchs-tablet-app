@@ -10,6 +10,7 @@ class Aufgabe {
   final bool wiederkehrend;
   final String quelle; // 'manuell' | 'whatsapp' | 'system'
   final int reihenfolge; // manuell im Dashboard einstellbar
+  final String? rezeptId; // verknüpftes Rezept, z.B. "wiege 5x Croissant ab"
 
   Aufgabe({
     required this.id,
@@ -23,6 +24,7 @@ class Aufgabe {
     required this.wiederkehrend,
     required this.quelle,
     required this.reihenfolge,
+    this.rezeptId,
   });
 
   bool get erledigt => status == 'erledigt';
@@ -39,6 +41,7 @@ class Aufgabe {
         wiederkehrend: json['wiederkehrend'] as bool? ?? false,
         quelle: json['quelle'] as String? ?? 'manuell',
         reihenfolge: json['reihenfolge'] as int? ?? 0,
+        rezeptId: json['rezept_id'] as String?,
       );
 
   String get uhrzeitKurz {

@@ -1,3 +1,5 @@
+import 'dart:ui' show FontFeature;
+
 import 'package:flutter/material.dart';
 
 import '../models/rezept.dart';
@@ -64,6 +66,18 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
         : r.umgerechneteMengeNachGewicht(z, _zielGewichtKg);
   }
 
+  /// Gewichtsbasierte Zutaten (g/kg) werden immer einheitlich in kg mit
+  /// genau drei Nachkommastellen angezeigt (z.B. "1,100 kg"), damit die
+  /// Kommas in der Spalte untereinander stehen. Andere Einheiten (Stück,
+  /// TL, EL, l, ml) behalten die bestehende Formatierung.
+  String _formatiereMengeLinks(double menge, String einheit) {
+    if (einheit == 'g' || einheit == 'kg') {
+      final kg = einheit == 'g' ? menge / 1000 : menge;
+      return '${kg.toStringAsFixed(3).replaceAll('.', ',')} kg';
+    }
+    return widget.rezept.formatiereMenge(menge, einheit);
+  }
+
   @override
   Widget build(BuildContext context) {
     final r = widget.rezept;
@@ -74,83 +88,122 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          SegmentedButton<_Skalierungsmodus>(
-            segments: const [
-              ButtonSegment(value: _Skalierungsmodus.stueckzahl, label: Text('Nach Stückzahl'), icon: Icon(Icons.numbers)),
-              ButtonSegment(value: _Skalierungsmodus.gewicht, label: Text('Nach Gewicht (kg)'), icon: Icon(Icons.scale)),
+          // Kompakte Kopfzeile: Umschalter und Zieleingabe nebeneinander statt
+          // in zwei gestapelten Zeilen, damit mehr Platz für die eigentliche
+          // Rezeptanzeige bleibt.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SegmentedButton<_Skalierungsmodus>(
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 10, vertical: 0)),
+                  textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 13)),
+                ),
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: _Skalierungsmodus.stueckzahl, label: Text('Stückzahl')),
+                  ButtonSegment(value: _Skalierungsmodus.gewicht, label: Text('Gewicht (kg)')),
+                ],
+                selected: {_modus},
+                onSelectionChanged: gewichtVerfuegbar
+                    ? (auswahl) => setState(() => _modus = auswahl.first)
+                    : null,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: _modus == _Skalierungsmodus.stueckzahl
+                    ? Row(
+                        children: [
+                          const Text('Ziel:', style: TextStyle(fontSize: 14)),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 70,
+                            child: TextField(
+                              controller: _stueckzahlController,
+                              keyboardType: TextInputType.number,
+                              onChanged: _stueckzahlAktualisieren,
+                              style: const TextStyle(fontSize: 16),
+                              textAlign: TextAlign.center,
+                              decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              '(Basis: ${r.basisStueckzahl})',
+                              style: const TextStyle(fontSize: 12, color: Colors.black54),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          const Text('Ziel:', style: TextStyle(fontSize: 14)),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 70,
+                            child: TextField(
+                              controller: _gewichtController,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              onChanged: _gewichtAktualisieren,
+                              style: const TextStyle(fontSize: 16),
+                              textAlign: TextAlign.center,
+                              decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              '(Basis: ${_formatKg(r.basisGewichtKg)} kg)',
+                              style: const TextStyle(fontSize: 12, color: Colors.black54),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
             ],
-            selected: {_modus},
-            onSelectionChanged: gewichtVerfuegbar
-                ? (auswahl) => setState(() => _modus = auswahl.first)
-                : null,
           ),
           if (!gewichtVerfuegbar)
             const Padding(
               padding: EdgeInsets.only(top: 8),
               child: Text(
                 'Gewichts-Skalierung nicht möglich: Für dieses Rezept sind keine Zutaten in g/kg hinterlegt.',
-                style: TextStyle(fontSize: 13, color: Colors.black54),
+                style: TextStyle(fontSize: 12, color: Colors.black54),
               ),
             ),
-          const SizedBox(height: 16),
-          if (_modus == _Skalierungsmodus.stueckzahl)
-            Row(
-              children: [
-                const Text('Zielstückzahl:', style: TextStyle(fontSize: 20)),
-                const SizedBox(width: 16),
-                SizedBox(
-                  width: 120,
-                  child: TextField(
-                    controller: _stueckzahlController,
-                    keyboardType: TextInputType.number,
-                    onChanged: _stueckzahlAktualisieren,
-                    style: const TextStyle(fontSize: 22),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text('(Basis: ${r.basisStueckzahl})', style: const TextStyle(color: Colors.black54)),
-              ],
-            )
-          else
-            Row(
-              children: [
-                const Text('Zielgewicht (kg):', style: TextStyle(fontSize: 20)),
-                const SizedBox(width: 16),
-                SizedBox(
-                  width: 120,
-                  child: TextField(
-                    controller: _gewichtController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: _gewichtAktualisieren,
-                    style: const TextStyle(fontSize: 22),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text('(Basis: ${_formatKg(r.basisGewichtKg)} kg)', style: const TextStyle(color: Colors.black54)),
-              ],
-            ),
-          const Divider(height: 32),
-          const Text('Zutaten', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          const Divider(height: 28),
+          const Text('Zutaten', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           ...r.zutaten.map((z) {
             final menge = _mengeFuer(z);
             return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
+              padding: const EdgeInsets.symmetric(vertical: 7),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: Text(z.name, style: const TextStyle(fontSize: 18))),
-                  Text(
-                    r.formatiereMenge(menge, z.einheit),
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  SizedBox(
+                    width: 118,
+                    child: Text(
+                      _formatiereMengeLinks(menge, z.einheit),
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
                   ),
+                  const SizedBox(width: 14),
+                  Expanded(child: Text(z.name, style: const TextStyle(fontSize: 22))),
                 ],
               ),
             );
           }),
-          const Divider(height: 32),
-          const Text('Arbeitsschritte', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          const Divider(height: 28),
+          const Text('Arbeitsschritte', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           ...r.schritte.asMap().entries.map((entry) {
             final index = entry.key + 1;
@@ -160,17 +213,17 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('$index. ', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text('$index. ', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                   Expanded(
                     child: Text(
                       schritt.text,
-                      style: TextStyle(fontSize: 18, fontStyle: schritt.fix ? FontStyle.italic : FontStyle.normal),
+                      style: TextStyle(fontSize: 22, fontStyle: schritt.fix ? FontStyle.italic : FontStyle.normal),
                     ),
                   ),
                   if (schritt.fix)
                     const Padding(
                       padding: EdgeInsets.only(left: 8),
-                      child: Tooltip(message: 'Wird nicht skaliert (z.B. Temperatur/Zeit)', child: Icon(Icons.lock, size: 18)),
+                      child: Tooltip(message: 'Wird nicht skaliert (z.B. Temperatur/Zeit)', child: Icon(Icons.lock, size: 20)),
                     ),
                 ],
               ),

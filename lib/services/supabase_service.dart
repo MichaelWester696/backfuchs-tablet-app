@@ -66,6 +66,11 @@ class SupabaseService {
     return (rows as List).map((r) => Rezept.fromJson(r as Map<String, dynamic>)).toList();
   }
 
+  Future<Rezept?> ladeRezeptById(String id) async {
+    final row = await _client.from('rezepte').select().eq('id', id).maybeSingle();
+    return row == null ? null : Rezept.fromJson(row);
+  }
+
   // ---------------------------------------------------------------------
   // Kommunikation
   // ---------------------------------------------------------------------
