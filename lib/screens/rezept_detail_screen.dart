@@ -23,6 +23,20 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
   late double _zielGewichtKg;
   late TextEditingController _gewichtController;
 
+  // Lässt Mitarbeiter die Zutaten-/Schritte-Schrift am Tablet nach Bedarf
+  // größer oder kleiner stellen (z.B. bei größerem Abstand zum Bildschirm).
+  static const double _schriftMin = 0.7;
+  static const double _schriftMax = 1.8;
+  double _schriftSkalierung = 1.0;
+
+  void _schriftVerkleinern() {
+    setState(() => _schriftSkalierung = (_schriftSkalierung - 0.1).clamp(_schriftMin, _schriftMax));
+  }
+
+  void _schriftVergroessern() {
+    setState(() => _schriftSkalierung = (_schriftSkalierung + 0.1).clamp(_schriftMin, _schriftMax));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -84,7 +98,26 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
     final gewichtVerfuegbar = r.basisGewichtKg > 0;
 
     return Scaffold(
-      appBar: AppBar(title: Text(r.name)),
+      appBar: AppBar(
+        title: Text(r.name),
+        actions: [
+          IconButton(
+            tooltip: 'Schrift verkleinern',
+            icon: const Icon(Icons.zoom_out),
+            onPressed: _schriftSkalierung > _schriftMin ? _schriftVerkleinern : null,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text('${(_schriftSkalierung * 100).round()}%', style: const TextStyle(fontSize: 14)),
+          ),
+          IconButton(
+            tooltip: 'Schrift vergrößern',
+            icon: const Icon(Icons.zoom_in),
+            onPressed: _schriftSkalierung < _schriftMax ? _schriftVergroessern : null,
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -185,19 +218,19 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    width: 118,
+                    width: 118 * _schriftSkalierung,
                     child: Text(
                       _formatiereMengeLinks(menge, z.einheit),
                       textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        fontSize: 22,
+                      style: TextStyle(
+                        fontSize: 22 * _schriftSkalierung,
                         fontWeight: FontWeight.w700,
-                        fontFeatures: [FontFeature.tabularFigures()],
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
                   ),
                   const SizedBox(width: 14),
-                  Expanded(child: Text(z.name, style: const TextStyle(fontSize: 22))),
+                  Expanded(child: Text(z.name, style: TextStyle(fontSize: 22 * _schriftSkalierung))),
                 ],
               ),
             );
@@ -213,11 +246,14 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('$index. ', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  Text('$index. ', style: TextStyle(fontSize: 22 * _schriftSkalierung, fontWeight: FontWeight.bold)),
                   Expanded(
                     child: Text(
                       schritt.text,
-                      style: TextStyle(fontSize: 22, fontStyle: schritt.fix ? FontStyle.italic : FontStyle.normal),
+                      style: TextStyle(
+                        fontSize: 22 * _schriftSkalierung,
+                        fontStyle: schritt.fix ? FontStyle.italic : FontStyle.normal,
+                      ),
                     ),
                   ),
                   if (schritt.fix)
