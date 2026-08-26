@@ -5,6 +5,7 @@ import 'aufgaben_screen.dart';
 import 'bestand_screen.dart';
 import 'defekt_screen.dart';
 import 'kommunikation_screen.dart';
+import 'posten_login_screen.dart';
 import 'rezepte_screen.dart';
 
 /// Container mit Bottom-Navigation für die 5 Hauptmodule der App.
@@ -18,6 +19,12 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+
+  void _zurPostenauswahl() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const PostenLoginScreen()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +61,14 @@ class _HomeShellState extends State<HomeShell> {
           ];
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.posten.name)),
+      appBar: AppBar(
+        title: Text(widget.posten.name),
+        leading: IconButton(
+          tooltip: 'Posten wechseln',
+          icon: const Icon(Icons.switch_account),
+          onPressed: _zurPostenauswahl,
+        ),
+      ),
       body: IndexedStack(index: _index, children: screens),
       // SafeArea sorgt dafür, dass die Leiste auf einem iPhone ohne Home-Button
       // (X und neuer) oberhalb der unteren Wisch-Geste-Zone bleibt, statt darunter

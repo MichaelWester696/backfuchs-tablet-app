@@ -1,6 +1,7 @@
 import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/rezept.dart';
 
@@ -25,16 +26,34 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
 
   // Lässt Mitarbeiter die Zutaten-/Schritte-Schrift am Tablet nach Bedarf
   // größer oder kleiner stellen (z.B. bei größerem Abstand zum Bildschirm).
+  // Wird pro Gerät in SharedPreferences gemerkt, damit die Einstellung nicht
+  // bei jedem Rezeptaufruf neu gewählt werden muss.
   static const double _schriftMin = 0.7;
   static const double _schriftMax = 1.8;
+  static const String _schriftPrefsKey = 'rezept_schrift_skalierung';
   double _schriftSkalierung = 1.0;
+
+  Future<void> _schriftSkalierungLaden() async {
+    final prefs = await SharedPreferences.getInstance();
+    final gespeichert = prefs.getDouble(_schriftPrefsKey);
+    if (gespeichert != null && mounted) {
+      setState(() => _schriftSkalierung = gespeichert.clamp(_schriftMin, _schriftMax));
+    }
+  }
+
+  Future<void> _schriftSkalierungSpeichern() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_schriftPrefsKey, _schriftSkalierung);
+  }
 
   void _schriftVerkleinern() {
     setState(() => _schriftSkalierung = (_schriftSkalierung - 0.1).clamp(_schriftMin, _schriftMax));
+    _schriftSkalierungSpeichern();
   }
 
   void _schriftVergroessern() {
     setState(() => _schriftSkalierung = (_schriftSkalierung + 0.1).clamp(_schriftMin, _schriftMax));
+    _schriftSkalierungSpeichern();
   }
 
   @override
@@ -45,6 +64,8 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
 
     _zielGewichtKg = widget.rezept.basisGewichtKg;
     _gewichtController = TextEditingController(text: _formatKg(_zielGewichtKg));
+
+    _schriftSkalierungLaden();
   }
 
   @override
