@@ -231,10 +231,13 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
           const Divider(height: 28),
           const Text('Zutaten', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          ...r.zutaten.map((z) {
+          ...r.zutaten.asMap().entries.map((entry) {
+            final i = entry.key;
+            final z = entry.value;
             final menge = _mengeFuer(z);
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 7),
+            return Container(
+              color: i.isOdd ? Colors.black.withValues(alpha: 0.045) : null,
+              padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
