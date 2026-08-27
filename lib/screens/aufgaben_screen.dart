@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/aufgabe.dart';
 import '../models/posten.dart';
+import '../services/offline/aufgaben_repository.dart';
 import '../services/supabase_service.dart';
 import '../theme.dart';
 import 'posten_login_screen.dart';
@@ -16,15 +17,21 @@ class AufgabenScreen extends StatefulWidget {
 }
 
 class _AufgabenScreenState extends State<AufgabenScreen> {
-  late Stream<List<Aufgabe>> _stream;
+  late final AufgabenRepository _repo;
   bool _pruefeSchichtLaeuft = true;
   bool _schichtAbgeschlossen = false;
 
   @override
   void initState() {
     super.initState();
-    _stream = SupabaseService.instance.aufgabenStream(widget.posten.id);
+    _repo = AufgabenRepository(widget.posten.id);
     _ladeSchichtStatus();
+  }
+
+  @override
+  void dispose() {
+    _repo.dispose();
+    super.dispose();
   }
 
   Future<void> _ladeSchichtStatus() async {
@@ -70,7 +77,7 @@ class _AufgabenScreenState extends State<AufgabenScreen> {
   }
 
   Future<void> _bestaetigen(Aufgabe a) async {
-    await SupabaseService.instance.aufgabeBestaetigen(a.id);
+    await _repo.bestaetigen(a.id);
   }
 
   Future<void> _zuRezeptSpringen(String rezeptId) async {
@@ -93,7 +100,7 @@ class _AufgabenScreenState extends State<AufgabenScreen> {
       children: [
         Expanded(
           child: StreamBuilder<List<Aufgabe>>(
-            stream: _stream,
+            stream: _repo.stream,
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());

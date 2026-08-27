@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/posten.dart';
+import '../services/offline/sync_service.dart';
+import '../services/supabase_service.dart';
+import '../theme.dart';
 import 'aufgaben_screen.dart';
 import 'bestand_screen.dart';
 import 'defekt_screen.dart';
@@ -19,6 +22,17 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.posten.name != 'Technik') {
+      // Rezepte im Hintergrund vorladen (und dabei lokal zwischenspeichern),
+      // damit sie auch offline abrufbar sind, ohne den Rezepte-Tab zuvor
+      // manuell geöffnet haben zu müssen.
+      SupabaseService.instance.sucheRezepte('');
+    }
+  }
 
   void _zurPostenauswahl() {
     Navigator.of(context).pushReplacement(
@@ -69,7 +83,12 @@ class _HomeShellState extends State<HomeShell> {
           onPressed: _zurPostenauswahl,
         ),
       ),
-      body: IndexedStack(index: _index, children: screens),
+      body: Column(
+        children: [
+          const _OfflineLeiste(),
+          Expanded(child: IndexedStack(index: _index, children: screens)),
+        ],
+      ),
       // SafeArea sorgt dafür, dass die Leiste auf einem iPhone ohne Home-Button
       // (X und neuer) oberhalb der unteren Wisch-Geste-Zone bleibt, statt darunter
       // zu verschwinden bzw. mit ihr zu überlappen.
@@ -81,6 +100,52 @@ class _HomeShellState extends State<HomeShell> {
           items: navItems,
         ),
       ),
+    );
+  }
+}
+
+/// Schmaler Hinweisbalken, der erscheint, sobald die Internetverbindung
+/// fehlt bzw. gerade wiederhergestellt und synchronisiert wird. Im Normalfall
+/// (online, nichts zu tun) nimmt er keinen Platz ein.
+class _OfflineLeiste extends StatelessWidget {
+  const _OfflineLeiste();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<SyncStatus>(
+      stream: SyncService.instance.statusStream,
+      initialData: SyncService.instance.status,
+      builder: (context, snapshot) {
+        final status = snapshot.data ?? SyncStatus.online;
+        if (status == SyncStatus.online) return const SizedBox.shrink();
+
+        final istOffline = status == SyncStatus.offline;
+        return Container(
+          width: double.infinity,
+          color: istOffline ? Colors.black87 : BackfuchsFarben.gold,
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                istOffline ? Icons.cloud_off : Icons.sync,
+                size: 16,
+                color: istOffline ? Colors.white : Colors.black87,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  istOffline
+                      ? 'Offline – Änderungen werden gespeichert und bei Wiederverbindung übertragen.'
+                      : 'Verbindung wiederhergestellt – wird synchronisiert …',
+                  style: TextStyle(fontSize: 13, color: istOffline ? Colors.white : Colors.black87),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
