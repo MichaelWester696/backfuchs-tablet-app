@@ -2,13 +2,15 @@ class Zutat {
   final double menge;
   final String einheit;
   final String name;
+  final bool ausgegraut; // rein optisch, im Dashboard einstellbar
 
-  Zutat({required this.menge, required this.einheit, required this.name});
+  Zutat({required this.menge, required this.einheit, required this.name, this.ausgegraut = false});
 
   factory Zutat.fromJson(Map<String, dynamic> json) => Zutat(
         menge: (json['menge'] as num).toDouble(),
         einheit: json['einheit'] as String,
         name: json['name'] as String,
+        ausgegraut: json['ausgegraut'] as bool? ?? false,
       );
 }
 

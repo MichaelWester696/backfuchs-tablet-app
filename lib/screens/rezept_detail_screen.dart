@@ -235,27 +235,33 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
             final i = entry.key;
             final z = entry.value;
             final menge = _mengeFuer(z);
-            return Container(
-              color: i.isOdd ? Colors.black.withValues(alpha: 0.045) : null,
-              padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 118 * _schriftSkalierung,
-                    child: Text(
-                      _formatiereMengeLinks(menge, z.einheit),
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontSize: 22 * _schriftSkalierung,
-                        fontWeight: FontWeight.w700,
-                        fontFeatures: const [FontFeature.tabularFigures()],
+            return Opacity(
+              // Im Dashboard als "ausgegraut" markierte Zutaten werden auch
+              // hier abgeblendet dargestellt - rein optisch, fließt weiter
+              // normal in die Mengenberechnung ein.
+              opacity: z.ausgegraut ? 0.5 : 1.0,
+              child: Container(
+                color: i.isOdd ? Colors.black.withValues(alpha: 0.045) : null,
+                padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 118 * _schriftSkalierung,
+                      child: Text(
+                        _formatiereMengeLinks(menge, z.einheit),
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          fontSize: 22 * _schriftSkalierung,
+                          fontWeight: FontWeight.w700,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(child: Text(z.name, style: TextStyle(fontSize: 22 * _schriftSkalierung))),
-                ],
+                    const SizedBox(width: 14),
+                    Expanded(child: Text(z.name, style: TextStyle(fontSize: 22 * _schriftSkalierung))),
+                  ],
+                ),
               ),
             );
           }),
