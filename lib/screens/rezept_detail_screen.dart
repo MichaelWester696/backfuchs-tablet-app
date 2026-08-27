@@ -239,7 +239,7 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
               // Im Dashboard als "ausgegraut" markierte Zutaten werden auch
               // hier abgeblendet dargestellt - rein optisch, fließt weiter
               // normal in die Mengenberechnung ein.
-              opacity: z.ausgegraut ? 0.5 : 1.0,
+              opacity: z.ausgegraut ? 0.72 : 1.0,
               child: Container(
                 color: i.isOdd ? Colors.black.withValues(alpha: 0.045) : null,
                 padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
