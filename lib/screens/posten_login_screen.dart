@@ -97,7 +97,7 @@ class _PostenLoginScreenState extends State<PostenLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Wester's Backfuchs")),
+      appBar: AppBar(title: const Text('Westers Backfuchs')),
       body: FutureBuilder<List<Posten>>(
         future: _postenFuture,
         builder: (context, snapshot) {

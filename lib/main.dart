@@ -29,7 +29,7 @@ class BackfuchsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: "Wester's Backfuchs – Produktion",
+      title: 'Westers Backfuchs – Produktion',
       debugShowCheckedModeBanner: false,
       theme: buildBackfuchsTheme(),
       home: const PostenLoginScreen(),

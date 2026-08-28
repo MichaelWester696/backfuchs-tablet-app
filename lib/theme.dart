@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Corporate Design von Wester's Backfuchs.
+/// Corporate Design von Westers Backfuchs.
 class BackfuchsFarben {
   static const dunkelrot = Color(0xFF8B1A1A);
   static const creme = Color(0xFFFAF5EC);
