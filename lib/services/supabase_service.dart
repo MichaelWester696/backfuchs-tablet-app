@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/aufgabe.dart';
+import '../models/backzettel.dart';
 import '../models/bestand_produkt.dart';
 import '../models/defekt.dart';
 import '../models/nachricht.dart';
@@ -230,6 +231,60 @@ class SupabaseService {
       return nameVergleich != 0 ? nameVergleich : a.traeger.compareTo(b.traeger);
     });
     return eintraege;
+  }
+
+  // ---------------------------------------------------------------------
+  // Backzettel
+  // ---------------------------------------------------------------------
+  Future<List<Backzettel>> ladeBackzettelVerlauf() async {
+    final rows = await _client.from('backzettel').select().order('arbeitsdatum', ascending: false).limit(4);
+    return (rows as List).map((r) => Backzettel.fromJson(r as Map<String, dynamic>)).toList();
+  }
+
+  Future<Map<String, String>> ladeBackzettelNotizen(String arbeitsdatum) async {
+    final rows = await _client
+        .from('backzettel_notizen')
+        .select('artikel_nr, notiz')
+        .eq('arbeitsdatum', arbeitsdatum);
+    final ergebnis = <String, String>{};
+    for (final r in (rows as List)) {
+      final notiz = r['notiz'] as String?;
+      if (notiz != null && notiz.isNotEmpty) ergebnis[r['artikel_nr'] as String] = notiz;
+    }
+    return ergebnis;
+  }
+
+  Future<void> speichereBackzettelNotiz({
+    required String arbeitsdatum,
+    required String artikelNr,
+    required String notiz,
+  }) async {
+    await _client.from('backzettel_notizen').upsert(
+      {
+        'arbeitsdatum': arbeitsdatum,
+        'artikel_nr': artikelNr,
+        'notiz': notiz,
+        'aktualisiert_am': DateTime.now().toUtc().toIso8601String(),
+      },
+      onConflict: 'arbeitsdatum,artikel_nr',
+    );
+  }
+
+  /// Realtime-Stream der Notizen für ein Arbeitsdatum, damit z.B. zwei
+  /// Postens gleichzeitig eingetragene Mengen sofort bei allen erscheinen.
+  Stream<Map<String, String>> backzettelNotizenStream(String arbeitsdatum) {
+    return _client
+        .from('backzettel_notizen')
+        .stream(primaryKey: ['arbeitsdatum', 'artikel_nr'])
+        .eq('arbeitsdatum', arbeitsdatum)
+        .map((rows) {
+          final ergebnis = <String, String>{};
+          for (final r in rows) {
+            final notiz = r['notiz'] as String?;
+            if (notiz != null && notiz.isNotEmpty) ergebnis[r['artikel_nr'] as String] = notiz;
+          }
+          return ergebnis;
+        });
   }
 
   // ---------------------------------------------------------------------

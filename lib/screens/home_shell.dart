@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/posten.dart';
+import '../services/backzettel_update_service.dart';
 import '../services/offline/sync_service.dart';
 import '../services/supabase_service.dart';
 import '../theme.dart';
 import 'aufgaben_screen.dart';
+import 'backzettel_screen.dart';
 import 'bestand_screen.dart';
 import 'defekt_screen.dart';
 import 'kommunikation_screen.dart';
@@ -32,6 +36,9 @@ class _HomeShellState extends State<HomeShell> {
       // manuell geöffnet haben zu müssen.
       SupabaseService.instance.sucheRezepte('');
     }
+    // Läuft für die gesamte App-Sitzung, unabhängig vom aktiven Tab, damit
+    // der "Backzettel aktualisiert"-Hinweis auf jedem Tablet erscheint.
+    BackzettelUpdateService.instance.start();
   }
 
   void _zurPostenauswahl() {
@@ -56,6 +63,7 @@ class _HomeShellState extends State<HomeShell> {
         : [
             AufgabenScreen(posten: widget.posten),
             if (zeigtRezepte) RezepteScreen(posten: widget.posten),
+            const BackzettelScreen(),
             KommunikationScreen(posten: widget.posten),
             BestandScreen(posten: widget.posten),
             DefektScreen(posten: widget.posten),
@@ -69,6 +77,7 @@ class _HomeShellState extends State<HomeShell> {
         : [
             const BottomNavigationBarItem(icon: Icon(Icons.checklist), label: 'Aufgaben'),
             if (zeigtRezepte) const BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Rezepte'),
+            const BottomNavigationBarItem(icon: Icon(Icons.description), label: 'Backzettel'),
             const BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Nachrichten'),
             const BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Bestand'),
             const BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
@@ -85,6 +94,7 @@ class _HomeShellState extends State<HomeShell> {
       ),
       body: Column(
         children: [
+          const _BackzettelAktualisiertBanner(),
           const _OfflineLeiste(),
           Expanded(child: IndexedStack(index: _index, children: screens)),
         ],
@@ -146,6 +156,70 @@ class _OfflineLeiste extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Auffälliger, selbstverschwindender Banner, der auf jedem Tablet erscheint,
+/// sobald ein bereits geladener Backzettel im Dashboard aktualisiert wurde
+/// (nicht beim allerersten Import eines Tages - siehe BackzettelUpdateService).
+class _BackzettelAktualisiertBanner extends StatefulWidget {
+  const _BackzettelAktualisiertBanner();
+
+  @override
+  State<_BackzettelAktualisiertBanner> createState() => _BackzettelAktualisiertBannerState();
+}
+
+class _BackzettelAktualisiertBannerState extends State<_BackzettelAktualisiertBanner> {
+  bool _sichtbar = false;
+  StreamSubscription<String>? _abo;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _abo = BackzettelUpdateService.instance.updates.listen((_) {
+      if (!mounted) return;
+      setState(() => _sichtbar = true);
+      _timer?.cancel();
+      _timer = Timer(const Duration(seconds: 15), () {
+        if (mounted) setState(() => _sichtbar = false);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _abo?.cancel();
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_sichtbar) return const SizedBox.shrink();
+    return Material(
+      color: BackfuchsFarben.gold,
+      child: InkWell(
+        onTap: () => setState(() => _sichtbar = false),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.black87, size: 26),
+              SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  'Achtung: Backzettel aktualisiert',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
