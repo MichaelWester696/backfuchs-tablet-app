@@ -19,9 +19,19 @@ class SupabaseService {
   // ---------------------------------------------------------------------
   // Posten
   // ---------------------------------------------------------------------
+  /// Wird schon auf dem allerersten Bildschirm (Postenauswahl) gebraucht -
+  /// muss also auch offline funktionieren, sonst kommt man gar nicht erst in
+  /// die App hinein. Fällt bei einem Netzwerkfehler auf den lokalen Cache
+  /// zurück, statt mit einem Fehler abzubrechen.
   Future<List<Posten>> ladePosten() async {
-    final rows = await _client.from('posten').select().eq('aktiv', true).order('reihenfolge');
-    return (rows as List).map((r) => Posten.fromJson(r as Map<String, dynamic>)).toList();
+    try {
+      final rows = await _client.from('posten').select().eq('aktiv', true).order('reihenfolge');
+      final liste = (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
+      await LocalCache.instance.postenSpeichern(liste);
+      return liste.map((r) => Posten.fromJson(r)).toList();
+    } catch (_) {
+      return LocalCache.instance.postenLaden().map((r) => Posten.fromJson(r)).toList();
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -273,15 +283,22 @@ class SupabaseService {
   // ---------------------------------------------------------------------
   // Schichtabschluss
   // ---------------------------------------------------------------------
+  /// Rein informativ (blendet nur den Hinweis "Schicht heute abgeschlossen"
+  /// ein/aus) - bei einem Netzwerkfehler lieber "nicht abgeschlossen"
+  /// annehmen, statt den Aufgaben-Bildschirm mit einem Fehler zu blockieren.
   Future<bool> pruefeSchichtAbgeschlossen(String postenId) async {
-    final heute = DateTime.now().toIso8601String().split('T').first;
-    final row = await _client
-        .from('schicht_abschluesse')
-        .select('id')
-        .eq('posten_id', postenId)
-        .eq('datum', heute)
-        .maybeSingle();
-    return row != null;
+    try {
+      final heute = DateTime.now().toIso8601String().split('T').first;
+      final row = await _client
+          .from('schicht_abschluesse')
+          .select('id')
+          .eq('posten_id', postenId)
+          .eq('datum', heute)
+          .maybeSingle();
+      return row != null;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> schliesseSchichtAb(String postenId) async {

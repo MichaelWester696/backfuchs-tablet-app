@@ -14,6 +14,7 @@ class LocalCache {
   LocalCache._();
   static final LocalCache instance = LocalCache._();
 
+  static const _postenBox = 'cache_posten';
   static const _rezepteBox = 'cache_rezepte';
   static const _aufgabenBox = 'cache_aufgaben';
   static const _bestandProdukteBox = 'cache_bestand_produkte';
@@ -26,6 +27,7 @@ class LocalCache {
     if (_bereit) return;
     await Hive.initFlutter();
     await Future.wait([
+      Hive.openBox(_postenBox),
       Hive.openBox(_rezepteBox),
       Hive.openBox(_aufgabenBox),
       Hive.openBox(_bestandProdukteBox),
@@ -34,6 +36,17 @@ class LocalCache {
     ]);
     _bereit = true;
   }
+
+  // ---------------------------------------------------------------------
+  // Posten: wird schon auf dem allerersten Bildschirm (Postenauswahl)
+  // gebraucht, bevor überhaupt ein Posten gewählt wurde - muss also als
+  // erstes gecacht sein, damit die App offline überhaupt startklar ist.
+  // ---------------------------------------------------------------------
+  Future<void> postenSpeichern(List<Map<String, dynamic>> rows) =>
+      Hive.box(_postenBox).put('liste', rows);
+
+  List<Map<String, dynamic>> postenLaden() =>
+      _alsMapListe(Hive.box(_postenBox).get('liste'));
 
   // ---------------------------------------------------------------------
   // Rezepte (posten-unabhängig, ein gemeinsamer Cache für alle)
