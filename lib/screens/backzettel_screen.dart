@@ -96,7 +96,8 @@ class _BackzettelScreenState extends State<BackzettelScreen> {
         content: TextField(
           controller: controller,
           autofocus: true,
-          maxLines: 3,
+          maxLines: 1,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(hintText: 'z.B. Bestandsmenge'),
         ),
         actions: [
