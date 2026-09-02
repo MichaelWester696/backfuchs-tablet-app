@@ -6,6 +6,19 @@ import '../models/backzettel.dart';
 import '../services/supabase_service.dart';
 import '../theme.dart';
 
+/// Ein anzuzeigender Tabellen-Spalteneintrag - kopf ist die Kopfzeile,
+/// quelle der Original-Spaltenname zum Nachschlagen in einer Zeilen-Map.
+/// kategorie ('Artikel'/'Menge'/'Teig'/'Dielen'/null) steuert Reihenfolge
+/// und Sonderbehandlung (siehe _spaltenPlan/_zelleFuer), istVergleich
+/// markiert die zusätzliche "(neu)"-Spalte bei einem Mengenupdate.
+class _SpaltenEintrag {
+  final String kopf;
+  final String quelle;
+  final String? kategorie;
+  final bool istVergleich;
+  const _SpaltenEintrag(this.kopf, this.quelle, {this.kategorie, this.istVergleich = false});
+}
+
 class BackzettelScreen extends StatefulWidget {
   const BackzettelScreen({super.key});
 
@@ -179,6 +192,96 @@ class _BackzettelScreenState extends State<BackzettelScreen> {
     return text.replaceAll('.', ',');
   }
 
+  /// Feste Anzeige-Reihenfolge der Spalten, unabhängig von der Reihenfolge
+  /// im Import: Artikel zuerst, dann unbekannte/sonstige Spalten, dann Menge
+  /// (direkt gefolgt von "Menge (neu)", falls ein Vorgänger-Upload für
+  /// dasselbe Datum vorliegt), dann Dielen ebenso, Teig ganz am Ende.
+  List<_SpaltenEintrag> _spaltenPlan(Backzettel b) {
+    if (b.spalten.isEmpty) return [];
+    final hatVergleich = b.vorherigeZeilen != null;
+    final artikelSpalte = b.spalten.first;
+    String? mengeSpalte, teigSpalte, dielenSpalte;
+    final unbekannt = <String>[];
+    for (final s in b.spalten.skip(1)) {
+      final kategorie = _spaltenKurzformen[s.toLowerCase().trim()];
+      if (kategorie == 'Menge') {
+        mengeSpalte = s;
+      } else if (kategorie == 'Teig') {
+        teigSpalte = s;
+      } else if (kategorie == 'Dielen') {
+        dielenSpalte = s;
+      } else {
+        unbekannt.add(s);
+      }
+    }
+
+    final plan = <_SpaltenEintrag>[
+      _SpaltenEintrag(_kuerzeSpaltenname(artikelSpalte), artikelSpalte, kategorie: 'Artikel'),
+      for (final s in unbekannt) _SpaltenEintrag(_kuerzeSpaltenname(s), s),
+    ];
+    if (mengeSpalte != null) {
+      plan.add(_SpaltenEintrag('Menge', mengeSpalte, kategorie: 'Menge'));
+      if (hatVergleich) plan.add(_SpaltenEintrag('Menge (neu)', mengeSpalte, kategorie: 'Menge', istVergleich: true));
+    }
+    if (dielenSpalte != null) {
+      plan.add(_SpaltenEintrag('Dielen', dielenSpalte, kategorie: 'Dielen'));
+      if (hatVergleich) plan.add(_SpaltenEintrag('Dielen (neu)', dielenSpalte, kategorie: 'Dielen', istVergleich: true));
+    }
+    if (teigSpalte != null) plan.add(_SpaltenEintrag('Teig', teigSpalte, kategorie: 'Teig'));
+    return plan;
+  }
+
+  /// Zeile aus dem vorherigen Upload mit derselben Artikelnummer, oder null
+  /// (kein Vorgänger-Upload, oder Artikel darin nicht vorhanden - z.B. neu
+  /// hinzugekommen).
+  Map<String, dynamic>? _vorherigeZeileFuer(Backzettel b, String artikelNr) {
+    final vorherige = b.vorherigeZeilen;
+    if (vorherige == null) return null;
+    for (final z in vorherige) {
+      if ((z['artikel_nr'] as String?) == artikelNr) return z;
+    }
+    return null;
+  }
+
+  /// Baut die Zelle für einen Spalten-Eintrag. Bei Menge/Dielen zeigt die
+  /// ursprüngliche Spalte den ALTEN Wert (falls ein Vorgänger-Upload
+  /// vorliegt) und die "(neu)"-Spalte den AKTUELLEN Wert - unterscheiden
+  /// sich beide, wird die Zelle hervorgehoben.
+  DataCell _zelleFuer(_SpaltenEintrag s, Map<String, dynamic> zeile, Map<String, dynamic>? vorherigeZeile, bool hatVergleich) {
+    if (s.kategorie == 'Menge' || s.kategorie == 'Dielen') {
+      final altWert = _formatiereWert(vorherigeZeile?[s.quelle]);
+      final neuWert = _formatiereWert(zeile[s.quelle]);
+      final veraendert = hatVergleich && altWert != neuWert;
+      final anzeige = s.istVergleich ? neuWert : (hatVergleich ? altWert : neuWert);
+      return DataCell(
+        Container(
+          padding: veraendert ? const EdgeInsets.symmetric(horizontal: 4, vertical: 2) : EdgeInsets.zero,
+          decoration: veraendert
+              ? BoxDecoration(color: BackfuchsFarben.gold.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(4))
+              : null,
+          child: Text(
+            anzeige,
+            style: TextStyle(fontSize: 13, fontWeight: veraendert ? FontWeight.bold : FontWeight.normal),
+          ),
+        ),
+      );
+    }
+    if (s.kategorie == 'Artikel') {
+      return DataCell(
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 150),
+          child: Text(
+            _formatiereWert(zeile[s.quelle]),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13),
+          ),
+        ),
+      );
+    }
+    return DataCell(Text(_formatiereWert(zeile[s.quelle]), style: const TextStyle(fontSize: 13)));
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_laedt) return const Center(child: CircularProgressIndicator());
@@ -200,6 +303,7 @@ class _BackzettelScreenState extends State<BackzettelScreen> {
 
     final angezeigt = _angezeigt!;
     final istHeute = angezeigt.arbeitsdatum == _heuteIso;
+    final plan = _spaltenPlan(angezeigt);
 
     return Column(
       children: [
@@ -259,9 +363,9 @@ class _BackzettelScreenState extends State<BackzettelScreen> {
                 columnSpacing: 18,
                 horizontalMargin: 10,
                 columns: [
-                  ...angezeigt.spalten.map(
+                  ...plan.map(
                     (s) => DataColumn(
-                      label: Text(_kuerzeSpaltenname(s), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      label: Text(s.kopf, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                     ),
                   ),
                   const DataColumn(label: Text('Notiz', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
@@ -271,14 +375,13 @@ class _BackzettelScreenState extends State<BackzettelScreen> {
                   final zeile = eintrag.value;
                   final artikelNr = zeile['artikel_nr'] as String? ?? '';
                   final notiz = _notizen[artikelNr] ?? '';
+                  final vorherigeZeile = _vorherigeZeileFuer(angezeigt, artikelNr);
                   return DataRow(
                     // Jede zweite Zeile bewusst heller als der cremefarbene
                     // Hintergrund (nicht dunkler), wie gewünscht.
                     color: WidgetStatePropertyAll(i.isOdd ? Colors.white : null),
                     cells: [
-                      ...angezeigt.spalten.map(
-                        (s) => DataCell(Text(_formatiereWert(zeile[s]), style: const TextStyle(fontSize: 13))),
-                      ),
+                      ...plan.map((s) => _zelleFuer(s, zeile, vorherigeZeile, angezeigt.vorherigeZeilen != null)),
                       DataCell(
                         Row(
                           mainAxisSize: MainAxisSize.min,

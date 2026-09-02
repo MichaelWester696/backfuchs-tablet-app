@@ -7,6 +7,12 @@ class Backzettel {
   final String? produktionsdatum;
   final List<String> spalten;
   final List<Map<String, dynamic>> zeilen;
+  // Stand des unmittelbar vorherigen Uploads für dasselbe Arbeitsdatum, falls
+  // dieser Zettel im Laufe des Tages aktualisiert wurde (sonst null) -
+  // Basis für den Alt/Neu-Vergleich bei Mengenupdates (siehe
+  // backzettel_screen.dart).
+  final List<String>? vorherigeSpalten;
+  final List<Map<String, dynamic>>? vorherigeZeilen;
   final DateTime hochgeladenAm;
   final String quelle;
 
@@ -16,6 +22,8 @@ class Backzettel {
     this.produktionsdatum,
     required this.spalten,
     required this.zeilen,
+    this.vorherigeSpalten,
+    this.vorherigeZeilen,
     required this.hochgeladenAm,
     required this.quelle,
   });
@@ -27,6 +35,10 @@ class Backzettel {
         spalten: ((json['spalten'] as List?) ?? []).map((e) => e.toString()).toList(),
         zeilen: ((json['zeilen'] as List?) ?? [])
             .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList(),
+        vorherigeSpalten: (json['vorherige_spalten'] as List?)?.map((e) => e.toString()).toList(),
+        vorherigeZeilen: (json['vorherige_zeilen'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
             .toList(),
         hochgeladenAm: DateTime.parse(json['hochgeladen_am'] as String),
         quelle: json['quelle'] as String? ?? 'manuell',
