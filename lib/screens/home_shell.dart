@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../models/nachricht.dart';
 import '../models/posten.dart';
 import '../services/backzettel_update_service.dart';
 import '../services/offline/sync_service.dart';
@@ -15,6 +16,35 @@ import 'kommunikation_screen.dart';
 import 'posten_login_screen.dart';
 import 'rezepte_screen.dart';
 
+/// Icon für den "Nachrichten"-Tab mit rotem Punkt, sobald für diesen Posten
+/// ungelesene, eingehende Nachrichten vorliegen (siehe
+/// istEingehendUndUngelesen in kommunikation_screen.dart - dieselbe
+/// Definition wird auch beim Markieren als gelesen im Chat-Thread benutzt).
+/// Bekommt den Stream von außen übergeben (siehe _HomeShellState), statt ihn
+/// selbst zu erzeugen - sonst würde bei jedem Tab-Wechsel (jeder Rebuild von
+/// HomeShell) eine neue Supabase-Realtime-Subscription aufgebaut.
+class _NachrichtenTabIcon extends StatelessWidget {
+  final Stream<List<Nachricht>> stream;
+  final String meinPostenId;
+  const _NachrichtenTabIcon({required this.stream, required this.meinPostenId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Nachricht>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        final ungelesen = (snapshot.data ?? []).any((n) => istEingehendUndUngelesen(n, meinPostenId));
+        return Badge(
+          isLabelVisible: ungelesen,
+          backgroundColor: Colors.red,
+          smallSize: 10,
+          child: const Icon(Icons.chat_bubble),
+        );
+      },
+    );
+  }
+}
+
 /// Container mit Bottom-Navigation für die 5 Hauptmodule der App.
 class HomeShell extends StatefulWidget {
   final Posten posten;
@@ -26,6 +56,7 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+  late final Stream<List<Nachricht>> _nachrichtenStream;
 
   @override
   void initState() {
@@ -39,6 +70,8 @@ class _HomeShellState extends State<HomeShell> {
     // Läuft für die gesamte App-Sitzung, unabhängig vom aktiven Tab, damit
     // der "Backzettel aktualisiert"-Hinweis auf jedem Tablet erscheint.
     BackzettelUpdateService.instance.start();
+    // Einmalig erzeugen und wiederverwenden (siehe _NachrichtenTabIcon).
+    _nachrichtenStream = SupabaseService.instance.nachrichtenStream();
   }
 
   void _zurPostenauswahl() {
@@ -69,16 +102,21 @@ class _HomeShellState extends State<HomeShell> {
             DefektScreen(posten: widget.posten),
           ];
 
+    final nachrichtenTabItem = BottomNavigationBarItem(
+      icon: _NachrichtenTabIcon(stream: _nachrichtenStream, meinPostenId: widget.posten.id),
+      label: 'Nachrichten',
+    );
+
     final navItems = istTechnik
-        ? const [
-            BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
-            BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Nachrichten'),
+        ? [
+            const BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
+            nachrichtenTabItem,
           ]
         : [
             const BottomNavigationBarItem(icon: Icon(Icons.checklist), label: 'Aufgaben'),
             if (zeigtRezepte) const BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'Rezepte'),
             const BottomNavigationBarItem(icon: Icon(Icons.description), label: 'Backzettel'),
-            const BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Nachrichten'),
+            nachrichtenTabItem,
             const BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Bestand'),
             const BottomNavigationBarItem(icon: Icon(Icons.build), label: 'Defekte'),
           ];
@@ -160,9 +198,14 @@ class _OfflineLeiste extends StatelessWidget {
   }
 }
 
-/// Auffälliger, selbstverschwindender Banner, der auf jedem Tablet erscheint,
-/// sobald ein bereits geladener Backzettel im Dashboard aktualisiert wurde
-/// (nicht beim allerersten Import eines Tages - siehe BackzettelUpdateService).
+/// Unsichtbarer Listener, der auf jedem Tablet einen Bestätigungsdialog
+/// öffnet, sobald ein bereits geladener Backzettel im Dashboard aktualisiert
+/// wurde (nicht beim allerersten Import eines Tages - siehe
+/// BackzettelUpdateService). Sitzt in HomeShell oberhalb der Tab-Inhalte,
+/// läuft also unabhängig davon, welcher Tab gerade aktiv ist. Der Dialog
+/// muss aktiv bestätigt werden (weder Antippen außerhalb noch der
+/// Zurück-Button schließen ihn), damit die Meldung nicht unbemerkt
+/// verschwindet.
 class _BackzettelAktualisiertBanner extends StatefulWidget {
   const _BackzettelAktualisiertBanner();
 
@@ -171,55 +214,61 @@ class _BackzettelAktualisiertBanner extends StatefulWidget {
 }
 
 class _BackzettelAktualisiertBannerState extends State<_BackzettelAktualisiertBanner> {
-  bool _sichtbar = false;
   StreamSubscription<String>? _abo;
-  Timer? _timer;
+  bool _dialogOffen = false;
 
   @override
   void initState() {
     super.initState();
-    _abo = BackzettelUpdateService.instance.updates.listen((_) {
-      if (!mounted) return;
-      setState(() => _sichtbar = true);
-      _timer?.cancel();
-      _timer = Timer(const Duration(seconds: 15), () {
-        if (mounted) setState(() => _sichtbar = false);
-      });
-    });
+    _abo = BackzettelUpdateService.instance.updates.listen((_) => _dialogAnzeigen());
+  }
+
+  Future<void> _dialogAnzeigen() async {
+    // Verhindert gestapelte Dialoge, falls kurz hintereinander mehrere
+    // Aktualisierungen eintreffen, während der vorherige Dialog noch offen ist.
+    if (!mounted || _dialogOffen) return;
+    _dialogOffen = true;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: BackfuchsFarben.gold,
+          icon: const Icon(Icons.warning_amber_rounded, color: Colors.black87, size: 32),
+          title: const Text(
+            'Achtung: Backzettel aktualisiert',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+          ),
+          content: const Text(
+            'Der Backzettel für ein bereits geladenes Datum wurde soeben geändert. '
+            'Bitte den aktuellen Stand im Backzettel-Tab prüfen.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.black87),
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+                child: Text('Verstanden'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    _dialogOffen = false;
   }
 
   @override
   void dispose() {
     _abo?.cancel();
-    _timer?.cancel();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) {
-    if (!_sichtbar) return const SizedBox.shrink();
-    return Material(
-      color: BackfuchsFarben.gold,
-      child: InkWell(
-        onTap: () => setState(() => _sichtbar = false),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.warning_amber_rounded, color: Colors.black87, size: 26),
-              SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  'Achtung: Backzettel aktualisiert',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }

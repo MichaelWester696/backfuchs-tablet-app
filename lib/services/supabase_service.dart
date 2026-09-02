@@ -136,6 +136,14 @@ class SupabaseService {
     });
   }
 
+  /// Markiert die angegebenen Nachrichten als gelesen (wird beim Öffnen
+  /// eines Chat-Threads für alle bis dahin ungelesenen, eingehenden
+  /// Nachrichten darin aufgerufen - siehe KommunikationScreen).
+  Future<void> markiereNachrichtenAlsGelesen(List<String> ids) async {
+    if (ids.isEmpty) return;
+    await _client.from('nachrichten').update({'gelesen': true}).inFilter('id', ids);
+  }
+
   // ---------------------------------------------------------------------
   // Bestandszählung
   // ---------------------------------------------------------------------

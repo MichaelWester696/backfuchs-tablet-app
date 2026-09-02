@@ -1,9 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/nachricht.dart';
 import '../models/posten.dart';
 import '../services/supabase_service.dart';
+
+/// Ob eine Nachricht für "meinPostenId" eingehend und noch ungelesen ist -
+/// eigene gesendete Nachrichten zählen nie als ungelesen für mich selbst.
+/// Wird sowohl beim Markieren als gelesen (unten in _ChatThreadState) als
+/// auch für den Ungelesen-Punkt am Nachrichten-Tab (siehe home_shell.dart)
+/// verwendet, damit beide Stellen exakt dieselbe Definition nutzen.
+bool istEingehendUndUngelesen(Nachricht n, String meinPostenId) {
+  if (n.gelesen || n.vonPostenId == meinPostenId) return false;
+  final direktAnMich = n.zielTyp == 'posten' && n.anPostenId == meinPostenId;
+  final leitungAnAlle = n.vonPostenId == null && n.zielTyp == 'leitung' && n.anPostenId == null;
+  return direktAnMich || leitungAnAlle;
+}
 
 /// Ein Konversationspartner ist entweder ein anderer Posten oder "die Leitung"
 /// (Backstubenleiter/Stellvertreterin). Leitung hat keine posten_id (analog
@@ -168,9 +182,33 @@ class _ChatThread extends StatefulWidget {
 
 class _ChatThreadState extends State<_ChatThread> {
   final _textController = TextEditingController();
+  StreamSubscription<List<Nachricht>>? _leseAbo;
+  final Set<String> _bereitsMarkiert = {};
+
+  @override
+  void initState() {
+    super.initState();
+    // Läuft unabhängig vom StreamBuilder unten in build(), damit jede
+    // ungelesene, eingehende Nachricht in diesem Thread markiert wird,
+    // sobald er geöffnet ist oder während er offen bleibt neue eintreffen.
+    _leseAbo = widget.stream.listen(_markiereUngeleseneImThread);
+  }
+
+  void _markiereUngeleseneImThread(List<Nachricht> alle) {
+    final neueIds = <String>[];
+    for (final n in alle) {
+      if (!widget.gehoertZuThread(n, widget.partner)) continue;
+      if (!istEingehendUndUngelesen(n, widget.meinPosten.id)) continue;
+      if (_bereitsMarkiert.add(n.id)) neueIds.add(n.id);
+    }
+    if (neueIds.isNotEmpty) {
+      SupabaseService.instance.markiereNachrichtenAlsGelesen(neueIds);
+    }
+  }
 
   @override
   void dispose() {
+    _leseAbo?.cancel();
     _textController.dispose();
     super.dispose();
   }
