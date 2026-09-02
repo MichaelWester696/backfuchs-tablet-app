@@ -138,6 +138,46 @@ class _BackzettelScreenState extends State<BackzettelScreen> {
     }
   }
 
+  // Bekannte, lange ERP-Spaltennamen auf kurze Kopfzeilen abbilden, damit die
+  // Tabelle nicht unnötig breit wird. Unbekannte Namen werden generisch
+  // gekürzt (letztes Wort nach "/", sonst die ersten Zeichen).
+  static const _spaltenKurzformen = {
+    'bzn / artikel-bezeichnung / einheit': 'Artikel',
+    'bestell-menge': 'Menge',
+    'teig einwaage': 'Teig',
+    'anzahl dielen': 'Dielen',
+  };
+
+  String _kuerzeSpaltenname(String name) {
+    final kurz = _spaltenKurzformen[name.toLowerCase().trim()];
+    if (kurz != null) return kurz;
+    final teile = name.split('/');
+    final kandidat = teile.first.trim();
+    return kandidat.length <= 12 ? kandidat : '${kandidat.substring(0, 11)}…';
+  }
+
+  // Zahlen (auch als Text mit Einheit, z.B. "23,497 kg") auf eine
+  // Nachkommastelle runden, damit die Tabelle schmaler und ruhiger wirkt.
+  String _formatiereWert(dynamic wert) {
+    if (wert == null) return '';
+    if (wert is num) return _rundeAufEineNachkommastelle(wert.toDouble());
+    final text = wert.toString().trim();
+    if (text.isEmpty) return '';
+    final treffer = RegExp(r'^(-?\d+(?:[.,]\d+)?)\s*(.*)$').firstMatch(text);
+    if (treffer == null) return text;
+    final zahl = double.tryParse(treffer.group(1)!.replaceAll(',', '.'));
+    if (zahl == null) return text;
+    final einheit = treffer.group(2)!.trim();
+    final formatiert = _rundeAufEineNachkommastelle(zahl);
+    return einheit.isEmpty ? formatiert : '$formatiert $einheit';
+  }
+
+  String _rundeAufEineNachkommastelle(double wert) {
+    final gerundet = (wert * 10).round() / 10;
+    final text = gerundet == gerundet.roundToDouble() ? gerundet.toStringAsFixed(0) : gerundet.toStringAsFixed(1);
+    return text.replaceAll('.', ',');
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_laedt) return const Center(child: CircularProgressIndicator());
@@ -208,34 +248,48 @@ class _BackzettelScreenState extends State<BackzettelScreen> {
         ),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
+                headingRowHeight: 36,
+                dataRowMinHeight: 32,
+                dataRowMaxHeight: 36,
+                columnSpacing: 18,
+                horizontalMargin: 10,
                 columns: [
                   ...angezeigt.spalten.map(
-                    (s) => DataColumn(label: Text(s, style: const TextStyle(fontWeight: FontWeight.bold))),
+                    (s) => DataColumn(
+                      label: Text(_kuerzeSpaltenname(s), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    ),
                   ),
-                  const DataColumn(label: Text('Notiz', style: TextStyle(fontWeight: FontWeight.bold))),
+                  const DataColumn(label: Text('Notiz', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
                 ],
-                rows: angezeigt.zeilen.map((zeile) {
+                rows: angezeigt.zeilen.asMap().entries.map((eintrag) {
+                  final i = eintrag.key;
+                  final zeile = eintrag.value;
                   final artikelNr = zeile['artikel_nr'] as String? ?? '';
                   final notiz = _notizen[artikelNr] ?? '';
                   return DataRow(
+                    // Jede zweite Zeile bewusst heller als der cremefarbene
+                    // Hintergrund (nicht dunkler), wie gewünscht.
+                    color: WidgetStatePropertyAll(i.isOdd ? Colors.white : null),
                     cells: [
-                      ...angezeigt.spalten.map((s) => DataCell(Text(zeile[s]?.toString() ?? ''))),
+                      ...angezeigt.spalten.map(
+                        (s) => DataCell(Text(_formatiereWert(zeile[s]), style: const TextStyle(fontSize: 13))),
+                      ),
                       DataCell(
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.edit_note, size: 18, color: notiz.isEmpty ? Colors.black38 : BackfuchsFarben.dunkelrot),
-                            const SizedBox(width: 6),
+                            Icon(Icons.edit_note, size: 16, color: notiz.isEmpty ? Colors.black38 : BackfuchsFarben.dunkelrot),
+                            const SizedBox(width: 4),
                             ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 160),
+                              constraints: const BoxConstraints(maxWidth: 100),
                               child: Text(
                                 notiz.isEmpty ? '—' : notiz,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: notiz.isEmpty ? Colors.black38 : Colors.black87),
+                                style: TextStyle(fontSize: 13, color: notiz.isEmpty ? Colors.black38 : Colors.black87),
                               ),
                             ),
                           ],
