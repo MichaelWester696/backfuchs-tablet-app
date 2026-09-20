@@ -76,7 +76,7 @@ class SupabaseService {
       if (begriff.isEmpty) {
         await LocalCache.instance.rezepteSpeichern(liste);
       }
-      return liste.map((r) => Rezept.fromJson(r)).toList();
+      return _alphabetischSortiert(liste.map((r) => Rezept.fromJson(r)).toList());
     } catch (_) {
       final zwischengespeichert = LocalCache.instance.rezepteLaden();
       final gefiltert = begriff.isEmpty
@@ -84,9 +84,26 @@ class SupabaseService {
           : zwischengespeichert
               .where((r) => (r['name'] as String? ?? '').toLowerCase().contains(begriff.toLowerCase()))
               .toList();
-      gefiltert.sort((a, b) => (a['name'] as String? ?? '').compareTo(b['name'] as String? ?? ''));
-      return gefiltert.map((r) => Rezept.fromJson(r)).toList();
+      return _alphabetischSortiert(gefiltert.map((r) => Rezept.fromJson(r)).toList());
     }
+  }
+
+  /// Deutschsprachig-alphabetische Sortierung nach Namen: Dart's eingebautes
+  /// String.compareTo vergleicht nur nach Unicode-Codepoint, dabei würden
+  /// Umlaute (Ä, Ö, Ü) fälschlich hinter "Z" statt bei ihrem Basisbuchstaben
+  /// einsortiert werden. "sucheRezepte" verlässt sich deshalb nicht allein
+  /// auf die Datenbank-Sortierung (".order('name')"), sondern sortiert hier
+  /// explizit nochmal - insbesondere wichtig für den Offline-Cache-Fall
+  /// oben, der komplett ohne Datenbank auskommt.
+  List<Rezept> _alphabetischSortiert(List<Rezept> rezepte) {
+    String schluessel(String s) => s
+        .toLowerCase()
+        .replaceAll('ä', 'a')
+        .replaceAll('ö', 'o')
+        .replaceAll('ü', 'u')
+        .replaceAll('ß', 'ss');
+    rezepte.sort((a, b) => schluessel(a.name).compareTo(schluessel(b.name)));
+    return rezepte;
   }
 
   Future<Rezept?> ladeRezeptById(String id) async {
