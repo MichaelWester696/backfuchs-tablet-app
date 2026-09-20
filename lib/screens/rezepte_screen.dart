@@ -19,11 +19,20 @@ class _RezepteScreenState extends State<RezepteScreen> {
   final _suchController = TextEditingController();
   Timer? _debounce;
   Future<List<Rezept>>? _rezepteFuture;
+  StreamSubscription<void>? _aenderungenAbo;
 
   @override
   void initState() {
     super.initState();
     _rezepteFuture = SupabaseService.instance.sucheRezepte('');
+    // Ohne dieses Abo bliebe die Liste für die gesamte App-Sitzung auf dem
+    // Stand von "jetzt" eingefroren - RezepteScreen wird (Teil des
+    // IndexedStack in HomeShell) nur einmal pro Sitzung neu erstellt.
+    _aenderungenAbo = SupabaseService.instance.rezepteAenderungenStream().listen((_) {
+      if (mounted) {
+        setState(() => _rezepteFuture = SupabaseService.instance.sucheRezepte(_suchController.text));
+      }
+    });
   }
 
   void _onSuchtextGeaendert(String text) {
@@ -36,6 +45,7 @@ class _RezepteScreenState extends State<RezepteScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _aenderungenAbo?.cancel();
     _suchController.dispose();
     super.dispose();
   }

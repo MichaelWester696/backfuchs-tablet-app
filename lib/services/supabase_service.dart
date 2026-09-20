@@ -88,6 +88,17 @@ class SupabaseService {
     }
   }
 
+  /// Reiner Änderungs-Trigger (kein aufbereitetes Ergebnis) - RezepteScreen
+  /// nutzt ihn, um bei jeder Änderung automatisch neu zu laden. Ohne das
+  /// würde die einmal geladene Rezeptliste erst nach einem manuellen
+  /// Neustart der App oder einer Suchbegriff-Änderung aktualisiert, da
+  /// RezepteScreen (Teil des IndexedStack in HomeShell) nur einmal pro
+  /// App-Sitzung neu erstellt wird - bei einem lange durchlaufenden
+  /// Kiosk-Tablet könnten neue Rezepte sonst tagelang unsichtbar bleiben.
+  Stream<void> rezepteAenderungenStream() {
+    return _client.from('rezepte').stream(primaryKey: ['id']).map((_) {});
+  }
+
   /// Deutschsprachig-alphabetische Sortierung nach Namen: Dart's eingebautes
   /// String.compareTo vergleicht nur nach Unicode-Codepoint, dabei würden
   /// Umlaute (Ä, Ö, Ü) fälschlich hinter "Z" statt bei ihrem Basisbuchstaben
