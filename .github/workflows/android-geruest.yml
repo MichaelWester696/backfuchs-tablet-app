@@ -1,0 +1,32 @@
+name: Android-Gerüst erzeugen (einmalig)
+
+# Erzeugt den android/-Ordner mit "flutter create" und stellt ihn als Artefakt
+# bereit. Wird nur von Hand gestartet; das Ergebnis wird geprüft und ins Repo
+# übernommen.
+on:
+  workflow_dispatch:
+
+jobs:
+  geruest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Android-Plattform anlegen
+        run: flutter create --platforms=android --org de.westersbackfuchs --project-name backfuchs_produktionsapp --description "Produktionssteuerung Westers Backfuchs" .
+
+      - name: Geänderte Dateien auflisten
+        run: git status --short
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-geruest
+          path: |
+            android
+            .metadata
+            analysis_options.yaml
