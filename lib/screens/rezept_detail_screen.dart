@@ -4,12 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/rezept.dart';
+import '../services/verwiegung_service.dart';
+import 'verwiegung_screen.dart';
 
 enum _Skalierungsmodus { stueckzahl, gewicht }
 
 class RezeptDetailScreen extends StatefulWidget {
   final Rezept rezept;
-  const RezeptDetailScreen({super.key, required this.rezept});
+
+  /// Für das Verwiegeprotokoll; null, wenn das Rezept ohne Posten geöffnet wird.
+  final String? postenId;
+  const RezeptDetailScreen({super.key, required this.rezept, this.postenId});
 
   @override
   State<RezeptDetailScreen> createState() => _RezeptDetailScreenState();
@@ -66,6 +71,21 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
     _gewichtController = TextEditingController(text: _formatKg(_zielGewichtKg));
 
     _schriftSkalierungLaden();
+    _verwiegungPruefen();
+  }
+
+  // Der Verwiegen-Knopf erscheint erst, wenn im Dashboard mindestens eine
+  // Position (Lampe) einem Rohstoff zugeordnet wurde - so sieht das Personal
+  // das Feature nicht, solange es noch nicht eingerichtet ist.
+  bool _verwiegungFreigegeben = false;
+
+  Future<void> _verwiegungPruefen() async {
+    final stamm = await VerwiegungService.instance.ladeStamm();
+    if (!mounted) return;
+    final freigegeben = stamm.positionen.any((p) => p.rohstoffId != null);
+    if (freigegeben != _verwiegungFreigegeben) {
+      setState(() => _verwiegungFreigegeben = freigegeben);
+    }
   }
 
   @override
@@ -111,6 +131,33 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
       return '${kg.toStringAsFixed(3).replaceAll('.', ',')} kg';
     }
     return widget.rezept.formatiereMenge(menge, einheit);
+  }
+
+  /// Umrechnungsfaktor des gewählten Ansatzes gegenüber dem Basisrezept.
+  double get _faktor {
+    final r = widget.rezept;
+    if (_modus == _Skalierungsmodus.stueckzahl) {
+      return r.basisStueckzahl == 0 ? 1 : _zielStueckzahl / r.basisStueckzahl;
+    }
+    return r.basisGewichtKg == 0 ? 1 : _zielGewichtKg / r.basisGewichtKg;
+  }
+
+  String get _zielText => _modus == _Skalierungsmodus.stueckzahl
+      ? '$_zielStueckzahl Stück'
+      : '${_formatKg(_zielGewichtKg)} kg';
+
+  void _verwiegungOeffnen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VerwiegungScreen(
+          rezept: widget.rezept,
+          mengeFuer: _mengeFuer,
+          zielText: _zielText,
+          faktor: _faktor,
+          postenId: widget.postenId,
+        ),
+      ),
+    );
   }
 
   @override
@@ -229,7 +276,19 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
               ),
             ),
           const Divider(height: 28),
-          const Text('Zutaten', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Zutaten', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+              ),
+              if (_verwiegungFreigegeben)
+                ElevatedButton.icon(
+                  onPressed: _verwiegungOeffnen,
+                  icon: const Icon(Icons.scale),
+                  label: const Text('Verwiegen'),
+                ),
+            ],
+          ),
           const SizedBox(height: 8),
           ...r.zutaten.asMap().entries.map((entry) {
             final i = entry.key;

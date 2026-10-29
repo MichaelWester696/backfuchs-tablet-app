@@ -89,7 +89,9 @@ class _RezepteScreenState extends State<RezepteScreen> {
                       subtitle: Text('Basis: ${r.basisStueckzahl} Stück · ${r.zutaten.length} Zutaten'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => RezeptDetailScreen(rezept: r)),
+                        MaterialPageRoute(
+                          builder: (_) => RezeptDetailScreen(rezept: r, postenId: widget.posten.id),
+                        ),
                       ),
                     ),
                   );

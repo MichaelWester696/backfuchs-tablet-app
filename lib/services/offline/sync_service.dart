@@ -110,6 +110,12 @@ class SyncService {
           onConflict: 'posten_id,produkt_id,traeger',
         );
         return;
+      case 'verwiegung_protokoll':
+        await client.from('verwiegungen').upsert(
+          Map<String, dynamic>.from(auftrag['zeile'] as Map),
+          onConflict: 'id',
+        );
+        return;
     }
   }
 

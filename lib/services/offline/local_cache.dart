@@ -19,6 +19,7 @@ class LocalCache {
   static const _aufgabenBox = 'cache_aufgaben';
   static const _bestandProdukteBox = 'cache_bestand_produkte';
   static const _bestandAktuellBox = 'cache_bestand_aktuell';
+  static const _verwiegungBox = 'cache_verwiegung';
   static const _outboxBoxName = 'outbox';
 
   bool _bereit = false;
@@ -32,6 +33,7 @@ class LocalCache {
       Hive.openBox(_aufgabenBox),
       Hive.openBox(_bestandProdukteBox),
       Hive.openBox(_bestandAktuellBox),
+      Hive.openBox(_verwiegungBox),
       Hive.openBox(_outboxBoxName),
     ]);
     _bereit = true;
@@ -80,6 +82,32 @@ class LocalCache {
 
   List<Map<String, dynamic>> bestandAktuellLaden(String postenId) =>
       _alsMapListe(Hive.box(_bestandAktuellBox).get(postenId));
+
+  // ---------------------------------------------------------------------
+  // Rohstoffstamm für die Verwiegung (Rohstoffe, Aliase, Positionen), damit
+  // die Verwiegung auch ohne Internet funktioniert.
+  // ---------------------------------------------------------------------
+  Future<void> rohstoffstammSpeichern({
+    required List<Map<String, dynamic>> rohstoffe,
+    required List<Map<String, dynamic>> aliase,
+    required List<Map<String, dynamic>> positionen,
+  }) =>
+      Hive.box(_verwiegungBox).put('stamm', {
+        'rohstoffe': rohstoffe,
+        'aliase': aliase,
+        'positionen': positionen,
+      });
+
+  /// Null, wenn noch nie ein Stamm geladen wurde.
+  Map<String, List<Map<String, dynamic>>>? rohstoffstammLaden() {
+    final roh = Hive.box(_verwiegungBox).get('stamm');
+    if (roh is! Map) return null;
+    return {
+      'rohstoffe': _alsMapListe(roh['rohstoffe']),
+      'aliase': _alsMapListe(roh['aliase']),
+      'positionen': _alsMapListe(roh['positionen']),
+    };
+  }
 
   // ---------------------------------------------------------------------
   // Outbox: Änderungen, die offline vorgenommen wurden und noch auf ihre
