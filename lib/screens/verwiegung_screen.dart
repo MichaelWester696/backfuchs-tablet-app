@@ -50,6 +50,14 @@ class VerwiegungScreen extends StatefulWidget {
   State<VerwiegungScreen> createState() => _VerwiegungScreenState();
 }
 
+/// Stationen der geführten Verwiegung.
+enum _Ablauf {
+  hinweise, // Hinweise an die Leitung, mit OK quittieren
+  chargen, // Wie viele Chargen werden gewogen?
+  wanne, // Leere Wanne aufstellen -> "Wanne ok" (auch nach jeder fertigen Charge)
+  wiegen, // Zutaten wiegen
+}
+
 class _VerwiegungScreenState extends State<VerwiegungScreen> {
   // Noch keine echte Waage angebunden: Simulation mit leerer Wanne (1,5 kg).
   final _waage = SimulierteWaage();
@@ -66,6 +74,13 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
   Waagenwert? _letzterWert;
   bool _gespeichert = false;
   LampenAnweisung _gesendeteLampen = LampenAnweisung.aus;
+
+  _Ablauf _ablauf = _Ablauf.chargen;
+  int _chargen = 1; // so viele Chargen sollen gewogen werden
+  int _charge = 1; // laufende bzw. zuletzt fertige Charge
+  bool _chargeFertig = false; // wahr, sobald die laufende Charge abgeschlossen ist
+  double _vorherigesEndeG = 0; // Bruttogewicht am Ende der letzten Charge (volle Wanne)
+  double _vorherigesNettoG = 0; // darin enthaltene Zutaten
 
   @override
   void initState() {
@@ -95,22 +110,81 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
     final stamm = await VerwiegungService.instance.ladeStamm();
     if (!mounted) return;
     _stamm = stamm;
-    _sitzungNeuAufbauen();
-    setState(() {});
-  }
-
-  void _sitzungNeuAufbauen() {
     final plan = VerwiegePlan.erstellen(
       rezept: widget.rezept,
       mengeFuer: widget.mengeFuer,
-      stamm: _stamm ?? Rohstoffstamm.leer(),
+      stamm: stamm,
     );
     _plan = plan;
-    _sitzung = VerwiegeSitzung(schritte: plan.schritte);
+    _ablauf = plan.hinweise.isEmpty ? _Ablauf.chargen : _Ablauf.hinweise;
+    _neueSitzung();
+    setState(() {});
+  }
+
+  /// Frische Sitzung für die nächste Charge (gleiche Mengen wie die vorige).
+  void _neueSitzung() {
+    _sitzung = _frischeSitzung();
     _gespeichert = false;
     _protokollId = _neueId();
+  }
+
+  VerwiegeSitzung _frischeSitzung() {
+    final sitzung = VerwiegeSitzung(schritte: _plan!.schritte);
     final letzter = _letzterWert;
-    if (letzter != null) _sitzung!.messwert(letzter);
+    if (letzter != null) sitzung.messwert(letzter);
+    return sitzung;
+  }
+
+  /// Schließt die Wannen-Abfrage ab und startet die Charge. Bei Folgechargen
+  /// darf nicht mehr die volle Wanne der vorigen Charge auf der Waage stehen.
+  String? _wanneProblem(VerwiegeSitzung sitzung) {
+    final jetzt = DateTime.now();
+    if (!sitzung.verbindungOk(jetzt)) return 'Keine Verbindung zur Waage';
+    if (!sitzung.letzter!.stabil) return 'Waage wird ruhig ...';
+    if (_charge > 1 || _chargeFertig) {
+      final schwelle = _vorherigesEndeG - _vorherigesNettoG * 0.5;
+      if (sitzung.letzter!.gramm > schwelle) {
+        return 'Die volle Wanne steht noch auf der Waage – bitte leere Wanne aufstellen';
+      }
+    }
+    return null;
+  }
+
+  void _wanneOk() {
+    final alt = _sitzung;
+    if (alt == null || _wanneProblem(alt) != null) return;
+    final folgecharge = _chargeFertig;
+    final sitzung = folgecharge ? _frischeSitzung() : alt;
+    if (!sitzung.start(DateTime.now())) return;
+    setState(() {
+      if (folgecharge) {
+        _charge++;
+        _chargeFertig = false;
+        _sitzung = sitzung;
+        _gespeichert = false;
+        _protokollId = _neueId();
+      }
+      _ablauf = _Ablauf.wiegen;
+    });
+  }
+
+  /// Aus dem Hinweis- bzw. Chargen-Schritt weiter zur Wannen-Abfrage.
+  void _weiter() {
+    setState(() {
+      switch (_ablauf) {
+        case _Ablauf.hinweise:
+          _ablauf = _Ablauf.chargen;
+          break;
+        case _Ablauf.chargen:
+          _charge = 1;
+          _chargeFertig = false;
+          _ablauf = _Ablauf.wanne;
+          break;
+        case _Ablauf.wanne:
+        case _Ablauf.wiegen:
+          break;
+      }
+    });
   }
 
   void _neuerWert(Waagenwert wert) {
@@ -131,8 +205,12 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
       _lampen.setze(lampen);
     }
 
-    if (sitzung.phase == SitzungsPhase.fertig && !_gespeichert) {
+    if (_ablauf == _Ablauf.wiegen && sitzung.phase == SitzungsPhase.fertig && !_gespeichert) {
       _protokollSpeichern(abgebrochen: false);
+      _vorherigesEndeG = sitzung.letzter?.gramm ?? 0;
+      _vorherigesNettoG = sitzung.ergebnisse.fold(0.0, (summe, e) => summe + (e.istG ?? 0));
+      _chargeFertig = true;
+      _ablauf = _Ablauf.wanne;
     }
     setState(() {});
   }
@@ -150,6 +228,8 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
       'rezept_name': widget.rezept.name,
       'ziel_text': widget.zielText,
       'faktor': widget.faktor,
+      'charge': _charge,
+      'chargen_gesamt': _chargen,
       'posten_id': widget.postenId,
       'simuliert': true, // bis die echte Waage angebunden ist
       'abgebrochen': abgebrochen,
@@ -161,18 +241,26 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
     });
   }
 
+  /// Während des Wiegens (und zwischen den Chargen einer Serie) wird vor dem
+  /// Verlassen nachgefragt, damit nichts versehentlich abgebrochen wird.
+  bool get _verlassenMussBestaetigtWerden =>
+      _ablauf == _Ablauf.wiegen ||
+      (_ablauf == _Ablauf.wanne && _chargeFertig && _charge < _chargen);
+
   Future<void> _zurueckFragen() async {
-    final sitzung = _sitzung;
-    if (sitzung == null || sitzung.phase != SitzungsPhase.laeuft) {
+    if (!_verlassenMussBestaetigtWerden) {
       if (mounted) Navigator.of(context).pop();
       return;
     }
+    final wiegt = _ablauf == _Ablauf.wiegen;
     final abbrechen = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('Verwiegung abbrechen?'),
-        content: const Text('Die bisher gewogenen Zutaten bleiben in der Wanne. Wirklich abbrechen?'),
+        content: Text(wiegt
+            ? 'Die bisher gewogenen Zutaten bleiben in der Wanne. Wirklich abbrechen?'
+            : 'Die weiteren Chargen werden dann nicht gewogen. Wirklich beenden?'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Weiter wiegen')),
           TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Abbrechen')),
@@ -180,18 +268,18 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
       ),
     );
     if (abbrechen != true || !mounted) return;
-    sitzung.abbrechen(DateTime.now());
-    await _protokollSpeichern(abgebrochen: true);
+    final sitzung = _sitzung;
+    if (wiegt && sitzung != null) {
+      sitzung.abbrechen(DateTime.now());
+      await _protokollSpeichern(abgebrochen: true);
+    }
     if (mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    final sitzung = _sitzung;
-    final laeuft = sitzung?.phase == SitzungsPhase.laeuft;
-
     return PopScope(
-      canPop: !laeuft,
+      canPop: !_verlassenMussBestaetigtWerden,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _zurueckFragen();
       },
@@ -199,25 +287,41 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
         appBar: AppBar(
           title: Text('Verwiegen: ${widget.rezept.name}'),
         ),
-        body: sitzung == null
+        body: _sitzung == null || _plan == null
             ? const Center(child: CircularProgressIndicator())
-            : _inhalt(sitzung),
+            : _inhalt(_sitzung!),
       ),
     );
   }
 
   Widget _inhalt(VerwiegeSitzung sitzung) {
     final Widget haupt;
-    switch (sitzung.phase) {
-      case SitzungsPhase.vorbereitung:
-        haupt = _vorbereitung(sitzung);
+    switch (_ablauf) {
+      case _Ablauf.hinweise:
+        haupt = _hinweiseSeite();
         break;
-      case SitzungsPhase.laeuft:
-        haupt = _laufend(sitzung);
+      case _Ablauf.chargen:
+        haupt = _chargenSeite();
         break;
-      case SitzungsPhase.fertig:
-      case SitzungsPhase.abgebrochen:
-        haupt = _fertig(sitzung);
+      case _Ablauf.wanne:
+        haupt = _wanneSeite(sitzung);
+        break;
+      case _Ablauf.wiegen:
+        haupt = Column(
+          children: [
+            Container(
+              width: double.infinity,
+              color: BackfuchsFarben.dunkelrot.withValues(alpha: 0.12),
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                'Charge $_charge von $_chargen · ${widget.zielText}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+              ),
+            ),
+            Expanded(child: _laufend(sitzung)),
+          ],
+        );
         break;
     }
 
@@ -230,85 +334,115 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // Vorbereitung
+  // 1. Hinweise an die Leitung
   // ---------------------------------------------------------------------
-  Widget _vorbereitung(VerwiegeSitzung sitzung) {
+  Widget _hinweiseSeite() {
     final plan = _plan!;
-    final jetzt = DateTime.now();
-    final bereit = sitzung.kannStarten(jetzt);
-    final verbunden = sitzung.verbindungOk(jetzt);
-
-    final String waagenText;
-    if (!verbunden) {
-      waagenText = 'Keine Verbindung zur Waage';
-    } else if (!sitzung.letzter!.stabil) {
-      waagenText = 'Waage: ${_kg(sitzung.letzter!.gramm)} (wird ruhig ...)';
-    } else {
-      waagenText = 'Waage: ${_kg(sitzung.letzter!.gramm)}';
-    }
-
+    final nichtsZuWiegen = plan.schritte.isEmpty;
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       children: [
-        Text('${widget.zielText} · ${plan.schritte.length} Zutaten am Verwiegeplatz',
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
+        Icon(Icons.warning_amber_rounded, size: 80, color: Colors.orange.shade800),
         const Text(
-          '1. Leere Wanne auf die Waage stellen.\n'
-          '2. „Start“ drücken.\n'
-          '3. Immer nur aus der grün leuchtenden Schütte nehmen.',
-          style: TextStyle(fontSize: 20, height: 1.4),
+          'Hinweise an die Leitung',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: verbunden ? _farbeRichtig : _farbeZuViel,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(waagenText, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
-        ),
-        if (plan.hinweise.isNotEmpty) ...[
-          const SizedBox(height: 12),
+        const SizedBox(height: 16),
+        for (final h in plan.hinweise)
           Container(
-            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.symmetric(vertical: 5),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: BackfuchsFarben.gold.withValues(alpha: 0.35),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Hinweise für die Leitung', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                for (final h in plan.hinweise) Text('• $h', style: const TextStyle(fontSize: 15)),
-              ],
-            ),
+            child: Text(h, style: const TextStyle(fontSize: 21)),
           ),
-        ],
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
         SizedBox(
-          height: 64,
+          height: 72,
           child: ElevatedButton(
-            onPressed: bereit
-                ? () {
-                    sitzung.start(DateTime.now());
-                    setState(() {});
-                  }
-                : null,
-            child: const Text('Start – Wanne steht auf der Waage', style: TextStyle(fontSize: 22)),
+            onPressed: nichtsZuWiegen ? () => Navigator.of(context).pop() : _weiter,
+            child: Text(nichtsZuWiegen ? 'OK – zurück zum Rezept' : 'OK', style: const TextStyle(fontSize: 28)),
           ),
         ),
-        if (plan.schritte.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 12),
-            child: Text(
-              'Dieses Rezept hat keine Zutaten für den Verwiegeplatz.',
-              style: TextStyle(fontSize: 18),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // 2. Anzahl Chargen
+  // ---------------------------------------------------------------------
+  Widget _chargenSeite() {
+    final plan = _plan!;
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const Text(
+          'Wie viele Chargen sollen gewogen werden?',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '1 Charge = ${widget.zielText}',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 20, color: Colors.black54),
+        ),
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton.filled(
+              iconSize: 48,
+              onPressed: _chargen > 1 ? () => setState(() => _chargen--) : null,
+              icon: const Icon(Icons.remove),
             ),
+            SizedBox(
+              width: 150,
+              child: Text(
+                '$_chargen',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 84, fontWeight: FontWeight.bold),
+              ),
+            ),
+            IconButton.filled(
+              iconSize: 48,
+              onPressed: _chargen < 30 ? () => setState(() => _chargen++) : null,
+              icon: const Icon(Icons.add),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          children: [
+            for (final n in const [1, 2, 3, 4, 5, 6])
+              ChoiceChip(
+                label: Text('$n', style: const TextStyle(fontSize: 22)),
+                selected: _chargen == n,
+                onSelected: (_) => setState(() => _chargen = n),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Insgesamt ${_kg(plan.summeSollG * _chargen)} am Verwiegeplatz',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 18, color: Colors.black54),
+        ),
+        const SizedBox(height: 24),
+        SizedBox(
+          height: 72,
+          child: ElevatedButton(
+            onPressed: _weiter,
+            child: const Text('Weiter', style: TextStyle(fontSize: 28)),
           ),
-        const SizedBox(height: 20),
-        const Text('Wird gewogen', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        ),
+        const SizedBox(height: 24),
+        const Text('Wird gewogen (pro Charge)', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
         const SizedBox(height: 6),
         for (final s in plan.schritte) _vorschauZeile(s),
         if (plan.andereZutaten.isNotEmpty) ...[
@@ -324,6 +458,80 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
               ),
             ),
         ],
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // 3. Wanne ok (vor der ersten Charge und nach jeder fertigen Charge)
+  // ---------------------------------------------------------------------
+  Widget _wanneSeite(VerwiegeSitzung sitzung) {
+    final folge = _chargeFertig;
+    final alleFertig = folge && _charge >= _chargen;
+    final problem = alleFertig ? null : _wanneProblem(sitzung);
+
+    final jetzt = DateTime.now();
+    final String waagenText;
+    if (!sitzung.verbindungOk(jetzt)) {
+      waagenText = 'Keine Verbindung zur Waage';
+    } else {
+      waagenText = 'Waage: ${_kg(sitzung.letzter!.gramm)}${sitzung.letzter!.stabil ? '' : ' (wird ruhig ...)'}';
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        if (folge)
+          const Icon(Icons.check_circle, size: 170, color: BackfuchsFarben.gruen)
+        else
+          const Icon(Icons.scale, size: 110, color: BackfuchsFarben.dunkelrot),
+        const SizedBox(height: 8),
+        Text(
+          alleFertig
+              ? 'Alle Chargen gewogen'
+              : (folge ? 'Charge $_charge von $_chargen fertig' : 'Charge 1 von $_chargen'),
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 38, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+        if (alleFertig)
+          const Text(
+            'Die letzte Wanne kann entnommen werden.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 24),
+          )
+        else
+          Text(
+            folge
+                ? 'Volle Wanne entnehmen und leere Wanne auf die Waage stellen.'
+                : 'Leere Wanne auf die Waage stellen.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 24),
+          ),
+        const SizedBox(height: 20),
+        if (!alleFertig)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: problem == null ? _farbeRichtig : _farbeWeniger,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              problem ?? waagenText,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+            ),
+          ),
+        const SizedBox(height: 20),
+        SizedBox(
+          height: 84,
+          child: ElevatedButton(
+            onPressed: alleFertig
+                ? () => Navigator.of(context).pop()
+                : (problem == null ? _wanneOk : null),
+            child: Text(alleFertig ? 'Fertig' : 'Wanne ok', style: const TextStyle(fontSize: 32)),
+          ),
+        ),
       ],
     );
   }
@@ -569,70 +777,6 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
             ),
         ],
       ),
-    );
-  }
-
-  // ---------------------------------------------------------------------
-  // Fertig
-  // ---------------------------------------------------------------------
-  Widget _fertig(VerwiegeSitzung sitzung) {
-    final plan = _plan!;
-    final abgebrochen = sitzung.phase == SitzungsPhase.abgebrochen;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Icon(
-          abgebrochen ? Icons.cancel : Icons.check_circle,
-          size: 96,
-          color: abgebrochen ? BackfuchsFarben.rot : BackfuchsFarben.gruen,
-        ),
-        Text(
-          abgebrochen ? 'Abgebrochen' : 'Alles gewogen',
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 34, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 16),
-        for (final e in sitzung.ergebnisse)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            child: Row(
-              children: [
-                Expanded(child: Text(e.schritt.zutatName, style: const TextStyle(fontSize: 20))),
-                Text(
-                  e.istG == null
-                      ? widget.rezept.formatiereMenge(e.schritt.sollMenge, e.schritt.einheit)
-                      : '${_kg(e.istG!)}  (Soll ${_kg(e.schritt.sollG)})',
-                  style: const TextStyle(fontSize: 20, fontFeatures: [FontFeature.tabularFigures()]),
-                ),
-              ],
-            ),
-          ),
-        const Divider(height: 28),
-        Text(
-          'Summe Soll ${_kg(plan.summeSollG)}',
-          style: const TextStyle(fontSize: 18, color: Colors.black54),
-        ),
-        const SizedBox(height: 20),
-        SizedBox(
-          height: 64,
-          child: ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Zurück zum Rezept', style: TextStyle(fontSize: 22)),
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (!abgebrochen)
-          SizedBox(
-            height: 56,
-            child: OutlinedButton(
-              onPressed: () {
-                _sitzungNeuAufbauen();
-                setState(() {});
-              },
-              child: const Text('Nächster Ansatz', style: TextStyle(fontSize: 20)),
-            ),
-          ),
-      ],
     );
   }
 

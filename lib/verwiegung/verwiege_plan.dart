@@ -125,6 +125,10 @@ class VerwiegePlan {
       ));
     }
 
+    if (schritte.isEmpty) {
+      hinweisMerken('Dieses Rezept hat keine Zutaten für den Verwiegeplatz.');
+    }
+
     return VerwiegePlan(schritte: schritte, andereZutaten: andere, hinweise: hinweise);
   }
 

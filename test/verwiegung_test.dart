@@ -147,6 +147,26 @@ void main() {
     });
   });
 
+  group('VerwiegePlan ohne Wiegeschritte', () {
+    test('meldet einen Hinweis, wenn nichts am Verwiegeplatz zu tun ist', () {
+      final rezept = Rezept(
+        id: 'y',
+        name: 'Nur Mehl',
+        basisStueckzahl: 1,
+        zutaten: [Zutat(menge: 1, einheit: 'kg', name: 'Roggenmehl')],
+        schritte: [],
+      );
+      final stamm = Rohstoffstamm.ausListen(
+        rohstoffe: const [Rohstoff(id: 'r2', name: 'Roggenmehl', typ: RohstoffTyp.mischer)],
+        aliase: const {'Roggenmehl': 'r2'},
+        positionen: const [],
+      );
+      final plan = VerwiegePlan.erstellen(rezept: rezept, mengeFuer: (z) => z.menge, stamm: stamm);
+      expect(plan.schritte.isEmpty, isTrue);
+      expect(plan.hinweise.length, 1);
+    });
+  });
+
   group('VerwiegeSitzung', () {
     VerwiegeSitzung neu() => VerwiegeSitzung(schritte: [
           _schritt('Salz', 500, position: 3),
