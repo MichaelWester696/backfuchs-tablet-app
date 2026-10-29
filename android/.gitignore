@@ -1,0 +1,9 @@
+.gradle
+/local.properties
+GeneratedPluginRegistrant.java
+.cxx/
+
+# Signaturschlüssel nie ins Repo
+key.properties
+**/*.keystore
+**/*.jks

@@ -1,0 +1,92 @@
+name: Build Android-App (APK + Play Store)
+
+# Baut bei jeder Änderung an der App eine signierte Android-App.
+# - Das APK (zum Direktinstallieren/Testen) und das AAB (für den Play Store)
+#   liegen danach als Artefakte am Lauf.
+# - Sobald das Secret PLAY_SERVICE_ACCOUNT_JSON gesetzt ist, wird das AAB
+#   automatisch in die Testspur "Interner Test" hochgeladen; das Tablet
+#   aktualisiert sich dann selbst über den Play Store.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-build
+  cancel-in-progress: false
+
+env:
+  PAKET: de.westersbackfuchs.produktion
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORT: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      PLAY_KONTO: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Signaturschlüssel einrichten
+        if: env.KEYSTORE_BASE64 != '' && env.KEYSTORE_PASSWORT != ''
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.p12
+          ALIAS=$(keytool -list -keystore android/app/upload-keystore.p12 -storetype PKCS12 \
+            -storepass "$KEYSTORE_PASSWORT" 2>/dev/null | grep -i "PrivateKeyEntry" | head -1 | cut -d, -f1)
+          if [ -z "$ALIAS" ]; then echo "Kein Schlüsseleintrag im Keystore gefunden"; exit 1; fi
+          {
+            echo "storeFile=upload-keystore.p12"
+            echo "storePassword=$KEYSTORE_PASSWORT"
+            echo "keyPassword=$KEYSTORE_PASSWORT"
+            echo "keyAlias=$ALIAS"
+          } > android/key.properties
+          echo "Release wird mit dem Upload-Schlüssel signiert."
+
+      - name: Hinweis ohne Schlüssel
+        if: env.KEYSTORE_BASE64 == ''
+        run: echo "::warning::Kein Signaturschlüssel hinterlegt - Probe-Signatur, nicht für den Play Store geeignet."
+
+      - run: flutter pub get
+
+      - name: APK bauen
+        run: flutter build apk --release --build-number=${{ github.run_number }}
+
+      - name: App Bundle (AAB) bauen
+        run: flutter build appbundle --release --build-number=${{ github.run_number }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backfuchs-android-${{ github.run_number }}
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      - name: In den Play Store hochladen (Interner Test)
+        if: env.PLAY_KONTO != '' && env.KEYSTORE_BASE64 != ''
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.PAKET }}
+          releaseFiles: build/app/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
