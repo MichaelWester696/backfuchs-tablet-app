@@ -54,18 +54,35 @@ void main() {
       expect(w.stabil, isFalse);
     });
 
-    test('Komma als Dezimaltrenner, negative Werte, ohne Einheit', () {
+    test('Komma als Dezimaltrenner, negative Werte', () {
       expect(WaagenProtokoll.parseZeile('12,5 g', _t(0))!.gramm, closeTo(12.5, 0.001));
       expect(WaagenProtokoll.parseZeile('-0.020 kg N', _t(0))!.gramm, closeTo(-20, 0.001));
-      expect(WaagenProtokoll.parseZeile('300', _t(0))!.gramm, closeTo(300, 0.001));
+    });
+
+    test('echte Zeilen der T32XW (30.10.2026)', () {
+      final stabil = WaagenProtokoll.parseZeile('   0.065 kg    G\r\n', _t(0))!;
+      expect(stabil.gramm, closeTo(65, 0.001));
+      expect(stabil.stabil, isTrue);
+      final instabil = WaagenProtokoll.parseZeile('   0.065 kg  ?  G', _t(0))!;
+      expect(instabil.gramm, closeTo(65, 0.001));
+      expect(instabil.stabil, isFalse);
     });
 
     test('Zeilen ohne Gewicht ergeben null', () {
       expect(WaagenProtokoll.parseZeile('', _t(0)), isNull);
       expect(WaagenProtokoll.parseZeile('Err 8.1', _t(0)), isNull);
+      expect(WaagenProtokoll.parseZeile('ES', _t(0)), isNull);
+    });
+
+    test('Stoerzeilen und abgeschnittene Zeilen werden verworfen', () {
+      // Gemessen: Zeile mit Stoerbytes (0x13 0x5A 0x9D 0x81) und verlorenes Zeilenende.
+      expect(WaagenProtokoll.parseZeile('   0.0\u0013Z\u009d\u0081   G', _t(0)), isNull);
+      expect(WaagenProtokoll.parseZeile('   0.0', _t(0)), isNull);
+      expect(WaagenProtokoll.parseZeile('   0.065 k', _t(0)), isNull);
+      expect(WaagenProtokoll.parseZeile('   0.065 kg  ?   0.065 kg    G', _t(0)), isNull);
+      expect(WaagenProtokoll.parseZeile('300', _t(0)), isNull);
     });
   });
-
   group('Rohstoffstamm', () {
     final stamm = Rohstoffstamm.ausListen(
       rohstoffe: const [
