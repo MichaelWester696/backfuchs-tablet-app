@@ -68,6 +68,19 @@ void main() {
       expect(instabil.stabil, isFalse);
     });
 
+    test('instabile Zeile der T32XW: Fragezeichen direkt vor der Legende', () {
+      // Gemessen beim Auflegen: "   0.140 kg   ?G\r\n"
+      final w = WaagenProtokoll.parseZeile('   0.140 kg   ?G\r\n', _t(0))!;
+      expect(w.gramm, closeTo(140, 0.001));
+      expect(w.stabil, isFalse);
+      expect(WaagenProtokoll.parseZeile('   4.315 kg   ?G', _t(0))!.gramm, closeTo(4315, 0.001));
+      expect(WaagenProtokoll.parseZeile('   0.140 kg    G', _t(0))!.stabil, isTrue);
+    });
+
+    test('Zeile ohne Einheit (Content Unit aus) wird verworfen', () {
+      expect(WaagenProtokoll.parseZeile('   0.025       G', _t(0)), isNull);
+    });
+
     test('Zeilen ohne Gewicht ergeben null', () {
       expect(WaagenProtokoll.parseZeile('', _t(0)), isNull);
       expect(WaagenProtokoll.parseZeile('Err 8.1', _t(0)), isNull);

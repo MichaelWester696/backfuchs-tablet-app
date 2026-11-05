@@ -16,21 +16,25 @@ class Waagenwert {
 
 /// Liest die Textzeilen der Ohaus-Waage (RS-232-Dauerausgabe).
 ///
-/// Am GerÃ¤t bestÃ¤tigtes Format (T32XW, 30.10.2026): `"   0.065 kg    G\r\n"`,
-/// instabil mit "?" hinter der Einheit. Die Leitung liefert gelegentlich
-/// StÃ¶rbytes und abgeschnittene Zeilen. Eine Zeile zÃ¤hlt deshalb nur, wenn sie
-/// vollstÃ¤ndig dem Muster entspricht: Zahl, Einheit (Pflicht - eine abgeschnittene
-/// Zeile wie "0.0" darf nicht als 0 g durchgehen), danach hÃ¶chstens "?"/"US"
-/// und eine kurze Legende (G, N, NET, T). Alles andere ergibt null.
+/// Am Gerät bestätigtes Format (T32XW, Content "Gross" + "Unit"):
+///   stabil:   `"   0.140 kg    G\r\n"`
+///   instabil: `"   0.140 kg   ?G\r\n"` (das "?" steht direkt vor der Legende)
+/// Die Leitung liefert gelegentlich Störbytes und abgeschnittene Zeilen. Eine
+/// Zeile zählt deshalb nur, wenn sie vollständig dem Muster entspricht: Zahl,
+/// Einheit (Pflicht - eine abgeschnittene Zeile wie "0.0" darf nicht als 0 g
+/// durchgehen), danach höchstens "?"/"US" und eine kurze Legende (G, N, NET, T).
+/// Alles andere ergibt null.
 class WaagenProtokoll {
   static final _zeile = RegExp(
-    r'^\s*([+-]?\s*\d+(?:[.,]\d+)?)\s*(kg|g|lb|oz)((?:\s*(?:\?|US))?(?:\s+[A-Z]{1,3})?(?:\s*(?:\?|US))?)\s*$',
-    caseSensitive: false,
+    r'^\s*([+-]?\s*\d+(?:[.,]\d+)?)\s*(kg|g|lb|oz)((?:\s*(?:\?|US)(?:\s*[A-Z]{1,3})?|\s+[A-Z]{1,3})?(?:\s*(?:\?|US))?)\s*$',
+    // Groß-/Kleinschreibung zählt: Einheiten sind klein (kg, g), die Legende ist
+    // groß (G). Sonst würde das Legenden-G einer Zeile ohne Einheit als "g" gelten.
+    caseSensitive: true,
   );
   static final _druckbar = RegExp(r'^[\x20-\x7E]*$');
 
-  /// Gibt null zurÃ¼ck, wenn die Zeile kein vollstÃ¤ndiges Gewicht enthÃ¤lt
-  /// (Leerzeile, Fehlermeldung "ES"/"Err 8.1", StÃ¶rbytes, abgeschnittene Zeile).
+  /// Gibt null zurück, wenn die Zeile kein vollständiges Gewicht enthält
+  /// (Leerzeile, Fehlermeldung "ES"/"Err 8.1", Störbytes, abgeschnittene Zeile).
   static Waagenwert? parseZeile(String zeile, DateTime zeit) {
     if (!_druckbar.hasMatch(zeile.replaceAll(RegExp(r'[\r\n]+$'), ''))) return null;
     final treffer = _zeile.firstMatch(zeile);
@@ -56,7 +60,7 @@ class WaagenProtokoll {
     }
 
     final rest = (treffer.group(3) ?? '').toUpperCase();
-    final instabil = rest.contains('?') || RegExp(r'\bUS\b').hasMatch(rest);
+    final instabil = rest.contains('?') || RegExp(r'\bUS').hasMatch(rest);
 
     return Waagenwert(gramm: gramm, stabil: !instabil, zeit: zeit, roh: zeile.trim());
   }
