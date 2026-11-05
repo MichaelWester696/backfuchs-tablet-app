@@ -1,5 +1,6 @@
 import 'dart:ui' show FontFeature;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -281,7 +282,9 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
               const Expanded(
                 child: Text('Zutaten', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
               ),
-              if (_verwiegungFreigegeben)
+              // Im Browser (https) kann die App keine Verbindung zur Waage im
+              // lokalen Netz öffnen, geführtes Verwiegen gibt es nur in der Android-App.
+              if (_verwiegungFreigegeben && !kIsWeb)
                 ElevatedButton.icon(
                   onPressed: _verwiegungOeffnen,
                   icon: const Icon(Icons.scale),

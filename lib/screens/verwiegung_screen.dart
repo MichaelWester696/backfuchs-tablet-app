@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui' show FontFeature;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../models/rezept.dart';
 import '../services/verwiegung_service.dart';
+import '../services/waagen_einstellungen.dart';
 import '../theme.dart';
 import '../verwiegung/lampen.dart';
 import '../verwiegung/rohstoffstamm.dart';
@@ -13,6 +15,8 @@ import '../verwiegung/verwiege_plan.dart';
 import '../verwiegung/verwiege_sitzung.dart';
 import '../verwiegung/waage.dart';
 import '../verwiegung/waagen_protokoll.dart';
+import '../verwiegung/websocket_kanal.dart';
+import '../verwiegung/websocket_waage.dart';
 
 // Ampelfarben der Verwiegung (hell, damit die große Schrift gut lesbar bleibt).
 const _farbeWartet = Color(0xFFE0E0E0);
@@ -59,8 +63,10 @@ enum _Ablauf {
 }
 
 class _VerwiegungScreenState extends State<VerwiegungScreen> {
-  // Noch keine echte Waage angebunden: Simulation mit leerer Wanne (1,5 kg).
-  final _waage = SimulierteWaage();
+  // Echte Waage (Waagen-Knoten per WebSocket) oder Simulation.
+  Waage? _waage;
+  SimulierteWaage? _simulation; // nur gesetzt, solange die Simulation läuft
+  Uri _knotenAdresse = Uri.parse(WaagenEinstellungen.standardAdresse);
   final _lampen = SimulierteLampen();
   final _gewichtController = TextEditingController();
   String _protokollId = _neueId(); // je Ansatz neu, sonst überschriebe der zweite Ansatz den ersten
@@ -85,10 +91,8 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
   @override
   void initState() {
     super.initState();
-    _waage.setzeGramm(1500);
-    _waage.verbinden();
-    _abo = _waage.werte.listen(_neuerWert);
     _takt = Timer.periodic(const Duration(milliseconds: 200), (_) => _tick());
+    _waageStarten();
     _laden();
   }
 
@@ -96,9 +100,99 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
   void dispose() {
     _takt?.cancel();
     _abo?.cancel();
-    _waage.trennen();
+    _waage?.trennen();
     _gewichtController.dispose();
     super.dispose();
+  }
+
+  /// Startet die Waage nach den gespeicherten Einstellungen. Im Web (https)
+  /// kann der Browser keine Verbindung ins lokale Netz öffnen, dort läuft
+  /// deshalb nur die Simulation.
+  Future<void> _waageStarten() async {
+    final adresse = await WaagenEinstellungen.ladeAdresse();
+    final simulation = kIsWeb || await WaagenEinstellungen.ladeSimulation(standard: false);
+    if (!mounted) return;
+    _knotenAdresse = adresse;
+    _waageEinrichten(simulation: simulation);
+    if (mounted) setState(() {});
+  }
+
+  void _waageEinrichten({required bool simulation}) {
+    _abo?.cancel();
+    _waage?.trennen();
+    _letzterWert = null;
+    final Waage waage;
+    if (simulation) {
+      final sim = SimulierteWaage()..setzeGramm(1500); // leere Wanne (1,5 kg)
+      _simulation = sim;
+      waage = sim;
+    } else {
+      _simulation = null;
+      waage = WebSocketWaage(adresse: _knotenAdresse, kanalFabrik: verbindeWebSocket);
+    }
+    _waage = waage;
+    waage.verbinden();
+    _abo = waage.werte.listen(_neuerWert);
+  }
+
+  Future<void> _einstellungenOeffnen() async {
+    final adresseController = TextEditingController(text: _knotenAdresse.toString());
+    var simulation = _simulation != null;
+    String? fehler;
+    final uebernommen = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          title: const Text('Waage'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: adresseController,
+                keyboardType: TextInputType.url,
+                decoration: InputDecoration(
+                  labelText: 'Adresse des Waagen-Knotens',
+                  helperText: 'z. B. ws://192.168.2.108:81',
+                  errorText: fehler,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (!kIsWeb)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Simulation statt echter Waage'),
+                  subtitle: const Text('Nur zum Ausprobieren – die Protokolle werden als simuliert markiert.'),
+                  value: simulation,
+                  onChanged: (an) => setDialog(() => simulation = an),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+            TextButton(
+              onPressed: () {
+                if (WaagenEinstellungen.pruefeAdresse(adresseController.text) == null) {
+                  setDialog(() => fehler = 'Ungültige Adresse');
+                  return;
+                }
+                Navigator.of(ctx).pop(true);
+              },
+              child: const Text('Übernehmen'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final adresse = WaagenEinstellungen.pruefeAdresse(adresseController.text);
+    adresseController.dispose();
+    if (uebernommen != true || adresse == null || !mounted) return;
+    await WaagenEinstellungen.speichereAdresse(adresse);
+    if (!kIsWeb) await WaagenEinstellungen.speichereSimulation(simulation);
+    if (!mounted) return;
+    _knotenAdresse = adresse;
+    _waageEinrichten(simulation: kIsWeb || simulation);
+    setState(() {});
   }
 
   static String _neueId() {
@@ -231,7 +325,7 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
       'charge': _charge,
       'chargen_gesamt': _chargen,
       'posten_id': widget.postenId,
-      'simuliert': true, // bis die echte Waage angebunden ist
+      'simuliert': _simulation != null,
       'abgebrochen': abgebrochen,
       'gestartet_am': sitzung.gestartetAm!.toUtc().toIso8601String(),
       'beendet_am': ende.toUtc().toIso8601String(),
@@ -286,6 +380,14 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: Text('Verwiegen: ${widget.rezept.name}'),
+          actions: [
+            IconButton(
+              tooltip: 'Waage einstellen',
+              icon: const Icon(Icons.settings_input_antenna),
+              // Während des Wiegens bleibt die Waage unverändert.
+              onPressed: _ablauf == _Ablauf.wiegen ? null : _einstellungenOeffnen,
+            ),
+          ],
         ),
         body: _sitzung == null || _plan == null
             ? const Center(child: CircularProgressIndicator())
@@ -328,7 +430,7 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
     return Column(
       children: [
         Expanded(child: haupt),
-        _simulationsLeiste(),
+        _waagenLeiste(),
       ],
     );
   }
@@ -781,9 +883,43 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // Simulation (Waage und Lampen), solange keine echte Hardware angebunden ist
+  // Untere Leiste: Verbindungsstatus der echten Waage bzw. Bedienung der Simulation
   // ---------------------------------------------------------------------
-  Widget _simulationsLeiste() {
+  Widget _waagenLeiste() {
+    final sim = _simulation;
+    return sim == null ? _verbindungsLeiste() : _simulationsLeiste(sim);
+  }
+
+  Widget _verbindungsLeiste() {
+    final waage = _waage;
+    final letzter = _letzterWert;
+    final jetzt = DateTime.now();
+    final frisch = letzter != null && jetzt.difference(letzter.zeit) <= const Duration(seconds: 3);
+    final String text;
+    if (waage == null) {
+      text = 'Waage wird gestartet ...';
+    } else if (frisch) {
+      text = 'Waage verbunden · ${_knotenAdresse.host}';
+    } else if (waage is WebSocketWaage && waage.verbindung == WaagenVerbindung.verbunden) {
+      text = 'Waagen-Knoten verbunden, aber die Waage sendet nichts';
+    } else {
+      text = '${waage.statusText} · ${_knotenAdresse.host}';
+    }
+    return Container(
+      width: double.infinity,
+      color: frisch ? Colors.black.withValues(alpha: 0.06) : _farbeZuViel,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          Icon(frisch ? Icons.check_circle : Icons.error, size: 18, color: frisch ? BackfuchsFarben.gruen : Colors.red.shade800),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+  }
+
+  Widget _simulationsLeiste(SimulierteWaage sim) {
     final positionen = _stamm?.positionen ?? const <Verwiegeposition>[];
     return Container(
       width: double.infinity,
@@ -794,7 +930,7 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Simulation – es ist noch keine Waage angeschlossen',
+            'Simulation – keine echte Waage',
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black54),
           ),
           const SizedBox(height: 4),
@@ -806,7 +942,7 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
               for (final d in const [-1000, -100, -10, 10, 100, 1000])
                 OutlinedButton(
                   style: OutlinedButton.styleFrom(minimumSize: const Size(64, 40)),
-                  onPressed: () => _waage.aendere(d.toDouble()),
+                  onPressed: () => sim.aendere(d.toDouble()),
                   child: Text('${d > 0 ? '+' : '−'}${d.abs() >= 1000 ? '1 kg' : '${d.abs()} g'}'),
                 ),
               SizedBox(
@@ -817,14 +953,14 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
                   decoration: const InputDecoration(isDense: true, hintText: 'kg setzen'),
                   onSubmitted: (text) {
                     final kg = double.tryParse(text.replaceAll(',', '.'));
-                    if (kg != null) _waage.setzeGramm(kg * 1000);
+                    if (kg != null) sim.setzeGramm(kg * 1000);
                   },
                 ),
               ),
               FilterChip(
                 label: const Text('Verbindung getrennt'),
-                selected: _waage.unterbrochen,
-                onSelected: (an) => setState(() => _waage.unterbrochen = an),
+                selected: sim.unterbrochen,
+                onSelected: (an) => setState(() => sim.unterbrochen = an),
               ),
             ],
           ),

@@ -2,11 +2,15 @@ import 'dart:async';
 
 import 'waagen_protokoll.dart';
 
-/// Quelle der Messwerte. Aktuell gibt es nur die Simulation; die echte
-/// Waage (ESP32-Waagenknoten per WebSocket) wird später als weitere
-/// Implementierung ergänzt, ohne dass sich Sitzung und Bildschirm ändern.
+/// Quelle der Messwerte: die echte Waage über den ESP32-Waagenknoten
+/// (`WebSocketWaage`) oder die Simulation. Sitzung und Bildschirm kennen nur
+/// diese Schnittstelle.
 abstract class Waage {
   Stream<Waagenwert> get werte;
+
+  /// Kurzer Verbindungsstatus für die Anzeige.
+  String get statusText;
+
   Future<void> verbinden();
   Future<void> trennen();
 }
@@ -34,6 +38,9 @@ class SimulierteWaage implements Waage {
 
   @override
   Stream<Waagenwert> get werte => _controller.stream;
+
+  @override
+  String get statusText => 'Simulation';
 
   @override
   Future<void> verbinden() async {
