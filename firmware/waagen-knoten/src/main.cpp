@@ -4,7 +4,7 @@
 //
 // Protokoll zum Tablet (WebSocket, Port 81, reiner Text):
 //   "   0.065 kg    G"   eine Zeile der Waage, unverändert (nur druckbare Zeichen)
-//   "#hb <Betriebs-s> <ms seit letzter Zeile> <verworfen>"   jede Sekunde
+//   "#hb <Betriebs-s> <ms seit letzter Zeile> <verworfen> <rxBytes> <rxStoer> <pinFlanken>"   jede Sekunde
 //
 // Die Auswertung der Gewichtszeilen (Einheit, Stabilität, Plausibilität) macht
 // die App; der Knoten verwirft nur Zeilen mit Störbytes oder zu langen Zeilen.
@@ -85,6 +85,15 @@ static uint32_t letzteZeileMs = 0;
 static bool hatZeile = false;
 static uint32_t verworfen = 0;
 static uint32_t letzterHeartbeat = 0;
+
+// Diagnose: was kommt am UART-Pin tatsächlich an?
+static uint32_t rxBytes = 0;     // alle gelesenen Bytes
+static uint32_t rxStoer = 0;     // davon nicht druckbar (ohne CR/LF)
+static uint32_t rxLf = 0;        // Zeilenenden
+static uint32_t pinFlanken = 0;  // Pegelwechsel am RX-Pin (per Abfrage gezählt)
+static int letzterPegel = -1;
+static uint8_t letzteBytes[16];
+static size_t letzteBytesAnz = 0;
 static uint32_t bootGedruecktSeit = 0;
 
 static void zeileAbschliessen() {
@@ -109,8 +118,20 @@ static void zeileAbschliessen() {
 }
 
 static void leseWaage() {
+  int pegel = digitalRead(PIN_WAAGE_RX);
+  if (letzterPegel >= 0 && pegel != letzterPegel) pinFlanken++;
+  letzterPegel = pegel;
   while (waageSerial.available() > 0) {
     int c = waageSerial.read();
+    rxBytes++;
+    if (c == '\n') rxLf++;
+    else if (c != '\r' && (c < 0x20 || c > 0x7E)) rxStoer++;
+    if (letzteBytesAnz < sizeof(letzteBytes)) {
+      letzteBytes[letzteBytesAnz++] = (uint8_t)c;
+    } else {
+      memmove(letzteBytes, letzteBytes + 1, sizeof(letzteBytes) - 1);
+      letzteBytes[sizeof(letzteBytes) - 1] = (uint8_t)c;
+    }
     if (c == '\n') {
       zeileAbschliessen();
     } else if (c == '\r') {
@@ -131,9 +152,10 @@ static void heartbeat() {
   uint32_t jetzt = millis();
   if (jetzt - letzterHeartbeat < 1000) return;
   letzterHeartbeat = jetzt;
-  char text[64];
+  char text[96];
   long alter = hatZeile ? (long)(jetzt - letzteZeileMs) : -1;
-  snprintf(text, sizeof(text), "#hb %lu %ld %lu", (unsigned long)(jetzt / 1000), alter, (unsigned long)verworfen);
+  snprintf(text, sizeof(text), "#hb %lu %ld %lu %lu %lu %lu", (unsigned long)(jetzt / 1000), alter,
+           (unsigned long)verworfen, (unsigned long)rxBytes, (unsigned long)rxStoer, (unsigned long)pinFlanken);
   ws.broadcastTXT(text);
 }
 
@@ -199,7 +221,16 @@ static void seiteStatusJson() {
   s += htmlEscape(WiFi.SSID());
   s += "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"rssi\":" + String(WiFi.RSSI());
   s += ",\"letzteZeileMs\":" + String(hatZeile ? (long)(millis() - letzteZeileMs) : -1L);
-  s += ",\"verworfen\":" + String((unsigned long)verworfen) + "}";
+  s += ",\"verworfen\":" + String((unsigned long)verworfen);
+  s += ",\"rxBytes\":" + String((unsigned long)rxBytes) + ",\"rxStoer\":" + String((unsigned long)rxStoer);
+  s += ",\"rxLf\":" + String((unsigned long)rxLf) + ",\"pinFlanken\":" + String((unsigned long)pinFlanken);
+  s += ",\"pegel\":" + String(digitalRead(PIN_WAAGE_RX)) + ",\"letzteBytes\":\"";
+  for (size_t i = 0; i < letzteBytesAnz; i++) {
+    char h[4];
+    snprintf(h, sizeof(h), "%02X", letzteBytes[i]);
+    s += h;
+  }
+  s += "\"}";
   http.send(200, "application/json", s);
 }
 
@@ -255,6 +286,7 @@ static void pruefeBootTaste() {
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_BOOT, INPUT_PULLUP);
+  pinMode(PIN_WAAGE_RX, INPUT);
   waageSerial.setRxBufferSize(1024);
   waageSerial.begin(WAAGE_BAUD, SERIAL_8N1, PIN_WAAGE_RX, PIN_WAAGE_TX);
 
