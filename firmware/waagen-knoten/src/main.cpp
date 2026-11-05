@@ -3,7 +3,8 @@
 // Waage (RS-232) -> MAX3232-Modul (3,3 V) -> UART1 des ESP32-S2 -> WLAN.
 //
 // Protokoll zum Tablet (WebSocket, Port 81, reiner Text):
-//   "   0.065 kg    G"   eine Zeile der Waage, unverändert (nur druckbare Zeichen)
+//   "   0.065 kg    G"   eine Zeile der Waage, unverändert (nur druckbare Zeichen),
+//                        höchstens 20 pro Sekunde; stabil <-> unruhig sofort
 //   "#hb <Betriebs-s> <ms seit letzter Zeile> <verworfen> <rxBytes> <rxStoer> <pinFlanken>"   jede Sekunde
 //
 // Die Auswertung der Gewichtszeilen (Einheit, Stabilität, Plausibilität) macht
@@ -19,6 +20,7 @@
 #include <WebServer.h>
 #include <WebSocketsServer.h>
 #include <WiFi.h>
+#include <esp_task_wdt.h>
 
 #ifndef PIN_WAAGE_RX
 #define PIN_WAAGE_RX 5
@@ -86,6 +88,19 @@ static bool hatZeile = false;
 static uint32_t verworfen = 0;
 static uint32_t letzterHeartbeat = 0;
 
+// Weitergabe an die Tablets: höchstens alle MIN_SENDEABSTAND_MS eine Zeile
+// (die Waage schickt bis zu 50/s); ein Wechsel stabil <-> unruhig geht sofort.
+static const uint32_t MIN_SENDEABSTAND_MS = 50;
+static const uint32_t WATCHDOG_S = 15;
+static const uint32_t WLAN_AUS_NEUSTART_MS = 60000;
+static bool zeileAusstehend = false;
+static bool letzteWarUnruhig = false;
+static uint32_t letzterSendeMs = 0;
+static uint32_t gesendet = 0;
+static uint32_t langsameSends = 0;     // Senden hat länger als 100 ms gedauert
+static uint32_t gekappteKlienten = 0;  // langsame/tote Klienten, die getrennt wurden
+static uint32_t wlanWegSeit = 0;
+
 // Diagnose: was kommt am UART-Pin tatsächlich an?
 static uint32_t rxBytes = 0;     // alle gelesenen Bytes
 static uint32_t rxStoer = 0;     // davon nicht druckbar (ohne CR/LF)
@@ -95,6 +110,33 @@ static int letzterPegel = -1;
 static uint8_t letzteBytes[16];
 static size_t letzteBytesAnz = 0;
 static uint32_t bootGedruecktSeit = 0;
+
+// Schickt einen Text an alle verbundenen Klienten. Ein Klient, der nicht
+// abnimmt (Schreiben schlägt nach WEBSOCKETS_TCP_TIMEOUT fehl), wird getrennt,
+// damit er die Hauptschleife nicht weiter aufhält.
+static void sendeAnAlle(const char* text) {
+  uint32_t start = millis();
+  for (uint8_t num = 0; num < WEBSOCKETS_SERVER_CLIENT_MAX; num++) {
+    if (!ws.clientIsConnected(num)) continue;
+    if (!ws.sendTXT(num, text)) {
+      ws.disconnect(num);
+      gekappteKlienten++;
+    }
+  }
+  if (millis() - start > 100) langsameSends++;
+}
+
+static void sendeAusstehendeZeile() {
+  if (!zeileAusstehend) return;
+  uint32_t jetzt = millis();
+  bool unruhig = strchr(letzteZeile, '?') != nullptr;
+  if (unruhig == letzteWarUnruhig && jetzt - letzterSendeMs < MIN_SENDEABSTAND_MS) return;
+  zeileAusstehend = false;
+  letzteWarUnruhig = unruhig;
+  letzterSendeMs = jetzt;
+  gesendet++;
+  sendeAnAlle(letzteZeile);
+}
 
 static void zeileAbschliessen() {
   bool hatZiffer = false;
@@ -109,7 +151,7 @@ static void zeileAbschliessen() {
     strlcpy(letzteZeile, zeile, sizeof(letzteZeile));
     letzteZeileMs = millis();
     hatZeile = true;
-    ws.broadcastTXT(zeile);
+    zeileAusstehend = true;
   } else if (zeilenLaenge > 0 || zeileGestoert) {
     verworfen++;
   }
@@ -156,7 +198,7 @@ static void heartbeat() {
   long alter = hatZeile ? (long)(jetzt - letzteZeileMs) : -1;
   snprintf(text, sizeof(text), "#hb %lu %ld %lu %lu %lu %lu", (unsigned long)(jetzt / 1000), alter,
            (unsigned long)verworfen, (unsigned long)rxBytes, (unsigned long)rxStoer, (unsigned long)pinFlanken);
-  ws.broadcastTXT(text);
+  sendeAnAlle(text);
 }
 
 static void wsEreignis(uint8_t num, WStype_t typ, uint8_t*, size_t) {
@@ -224,6 +266,9 @@ static void seiteStatusJson() {
   s += ",\"verworfen\":" + String((unsigned long)verworfen);
   s += ",\"rxBytes\":" + String((unsigned long)rxBytes) + ",\"rxStoer\":" + String((unsigned long)rxStoer);
   s += ",\"rxLf\":" + String((unsigned long)rxLf) + ",\"pinFlanken\":" + String((unsigned long)pinFlanken);
+  s += ",\"gesendet\":" + String((unsigned long)gesendet) + ",\"langsameSends\":" + String((unsigned long)langsameSends);
+  s += ",\"gekappteKlienten\":" + String((unsigned long)gekappteKlienten);
+  s += ",\"klienten\":" + String(ws.connectedClients()) + ",\"freierSpeicher\":" + String(ESP.getFreeHeap());
   s += ",\"pegel\":" + String(digitalRead(PIN_WAAGE_RX)) + ",\"letzteBytes\":\"";
   for (size_t i = 0; i < letzteBytesAnz; i++) {
     char h[4];
@@ -308,12 +353,32 @@ void setup() {
   starteHttp();
   ws.begin();
   ws.onEvent(wsEreignis);
+  ws.enableHeartbeat(10000, 3000, 2);  // Klienten, die nicht mehr antworten, werden getrennt
+
+  // Hängt die Hauptschleife länger als WATCHDOG_S, startet der Knoten neu.
+  esp_task_wdt_init(WATCHDOG_S, true);
+  esp_task_wdt_add(nullptr);
+}
+
+// Ohne WLAN im Betrieb: nach einer Minute neu starten (Router war weg o. Ä.).
+static void pruefeWlan() {
+  if (setupModus) return;
+  if (WiFi.status() == WL_CONNECTED) {
+    wlanWegSeit = 0;
+    return;
+  }
+  if (wlanWegSeit == 0) wlanWegSeit = millis();
+  if (millis() - wlanWegSeit > WLAN_AUS_NEUSTART_MS) ESP.restart();
 }
 
 void loop() {
+  esp_task_wdt_reset();
   leseWaage();
+  sendeAusstehendeZeile();
   ws.loop();
   http.handleClient();
   heartbeat();
+  pruefeWlan();
   pruefeBootTaste();
+  delay(1);  // gibt WLAN- und Leerlaufaufgaben Zeit
 }
