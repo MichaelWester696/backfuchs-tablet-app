@@ -236,61 +236,27 @@ class _SchnellWaageState extends State<SchnellWaage> {
             : (stabil ? 'stabil' : 'unruhig');
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      padding: const EdgeInsets.fromLTRB(16, 4, 8, 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Kopfzeile: Zustand der Waage und Menü.
           Row(
             children: [
-              Icon(Icons.scale, size: 22, color: netto == null ? Colors.red.shade800 : BackfuchsFarben.gruen),
-              const SizedBox(width: 12),
+              Icon(Icons.scale, size: 24, color: netto == null ? Colors.red.shade800 : BackfuchsFarben.gruen),
+              const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        gewicht,
-                        style: TextStyle(
-                          fontSize: 44,
-                          fontWeight: FontWeight.w700,
-                          height: 1.05,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                          color: netto == null
-                              ? Colors.black38
-                              : (stabil ? Colors.black : Colors.black.withValues(alpha: 0.55)),
-                        ),
-                      ),
-                    ),
-                    Text(
-                      zeile2,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: netto == null ? Colors.red.shade800 : Colors.black54,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  zeile2,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: netto == null ? Colors.red.shade800 : Colors.black54,
+                  ),
                 ),
-              ),
-              if (_modell.tariert)
-                IconButton(
-                  tooltip: 'Tara löschen',
-                  icon: const Icon(Icons.restart_alt),
-                  onPressed: () => setState(_modell.taraLoeschen),
-                ),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(120, 56),
-                  textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                ),
-                onPressed: netto == null ? null : () => setState(() => _modell.tarieren(DateTime.now())),
-                icon: const Icon(Icons.exposure_zero),
-                label: const Text('Tara'),
               ),
               PopupMenuButton<String>(
                 tooltip: 'Mehr',
@@ -305,9 +271,58 @@ class _SchnellWaageState extends State<SchnellWaage> {
               ),
             ],
           ),
+          // Gewicht: so groß wie die Breite zulässt (bis 130 pt).
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                gewicht,
+                style: TextStyle(
+                  fontSize: 130,
+                  fontWeight: FontWeight.w700,
+                  height: 1.1,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  color: netto == null
+                      ? Colors.black38
+                      : (stabil ? Colors.black : Colors.black.withValues(alpha: 0.55)),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Row(
+              children: [
+                if (_modell.tariert) ...[
+                  SizedBox(
+                    height: 100,
+                    width: 100,
+                    child: OutlinedButton(
+                      onPressed: () => setState(_modell.taraLoeschen),
+                      child: const Tooltip(message: 'Tara löschen', child: Icon(Icons.restart_alt, size: 48)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                Expanded(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 100),
+                      textStyle: const TextStyle(fontSize: 48, fontWeight: FontWeight.w800),
+                    ),
+                    onPressed: netto == null ? null : () => setState(() => _modell.tarieren(DateTime.now())),
+                    icon: const Icon(Icons.exposure_zero, size: 52),
+                    label: const Text('Tara'),
+                  ),
+                ),
+              ],
+            ),
+          ),
           if (sim != null)
             Padding(
-              padding: const EdgeInsets.only(top: 6, right: 8),
+              padding: const EdgeInsets.only(top: 8, right: 8),
               child: Wrap(
                 spacing: 6,
                 runSpacing: 4,
@@ -315,7 +330,7 @@ class _SchnellWaageState extends State<SchnellWaage> {
                 children: [
                   for (final d in const [-1000, -100, 100, 1000])
                     OutlinedButton(
-                      style: OutlinedButton.styleFrom(minimumSize: const Size(64, 36)),
+                      style: OutlinedButton.styleFrom(minimumSize: const Size(64, 40)),
                       onPressed: () => sim.aendere(d.toDouble()),
                       child: Text('${d > 0 ? '+' : '−'}${d.abs() >= 1000 ? '1 kg' : '${d.abs()} g'}'),
                     ),

@@ -151,6 +151,7 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
   // Während der geführten Verwiegung nutzt diese die Waage; die Schnellwaage
   // unten trennt dann ihre Verbindung zum Waagen-Knoten.
   bool _verwiegungOffen = false;
+  bool _schritteSichtbar = false;
 
   Future<void> _verwiegungOeffnen() async {
     setState(() => _verwiegungOffen = true);
@@ -336,10 +337,24 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
               ),
             );
           }),
-          const Divider(height: 28),
-          const Text('Arbeitsschritte', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          ...r.schritte.asMap().entries.map((entry) {
+          // Die Arbeitsschritte sind eingeklappt, damit die Schnellwaage unten Platz hat.
+          if (r.schritte.isNotEmpty) ...[
+            const Divider(height: 28),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 56),
+                textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+              ),
+              onPressed: () => setState(() => _schritteSichtbar = !_schritteSichtbar),
+              icon: Icon(_schritteSichtbar ? Icons.expand_less : Icons.expand_more, size: 28),
+              label: Text(_schritteSichtbar
+                  ? 'Arbeitsschritte ausblenden'
+                  : 'Arbeitsschritte anzeigen (${r.schritte.length})'),
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (_schritteSichtbar)
+            ...r.schritte.asMap().entries.map((entry) {
             final index = entry.key + 1;
             final schritt = entry.value;
             return Padding(
