@@ -9,6 +9,7 @@ class WaagenEinstellungen {
   static const standardAdresse = 'ws://192.168.2.108:81';
   static const _schluesselAdresse = 'waagen_knoten_adresse';
   static const _schluesselSimulation = 'waagen_simulation';
+  static const _schluesselSchnellwaage = 'waagen_schnellwaage_anzeigen';
 
   /// Prüft eine Eingabe und liefert die Adresse oder null, wenn sie ungültig ist.
   /// "192.168.2.108" und "192.168.2.108:81" werden zu "ws://192.168.2.108:81" ergänzt.
@@ -49,5 +50,21 @@ class WaagenEinstellungen {
   static Future<void> speichereSimulation(bool an) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_schluesselSimulation, an);
+  }
+
+  /// Schnellwaage (Gewicht + Tara) am unteren Rand der Rezeptansicht. Tablets
+  /// ohne Waage können sie ausblenden.
+  static Future<bool> ladeSchnellwaage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_schluesselSchnellwaage) ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static Future<void> speichereSchnellwaage(bool an) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_schluesselSchnellwaage, an);
   }
 }

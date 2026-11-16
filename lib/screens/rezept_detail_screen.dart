@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/rezept.dart';
 import '../services/verwiegung_service.dart';
+import '../widgets/schnell_waage.dart';
 import 'verwiegung_screen.dart';
 
 enum _Skalierungsmodus { stueckzahl, gewicht }
@@ -147,8 +148,13 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
       ? '$_zielStueckzahl Stück'
       : '${_formatKg(_zielGewichtKg)} kg';
 
-  void _verwiegungOeffnen() {
-    Navigator.of(context).push(
+  // Während der geführten Verwiegung nutzt diese die Waage; die Schnellwaage
+  // unten trennt dann ihre Verbindung zum Waagen-Knoten.
+  bool _verwiegungOffen = false;
+
+  Future<void> _verwiegungOeffnen() async {
+    setState(() => _verwiegungOffen = true);
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => VerwiegungScreen(
           rezept: widget.rezept,
@@ -159,6 +165,7 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
         ),
       ),
     );
+    if (mounted) setState(() => _verwiegungOffen = false);
   }
 
   @override
@@ -187,6 +194,8 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
           const SizedBox(width: 4),
         ],
       ),
+      // Schnellwaage: aktuelles Gewicht und Tara (nur in der Android-App).
+      bottomNavigationBar: SchnellWaage(aktiv: !_verwiegungOffen),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
