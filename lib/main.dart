@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'screens/posten_login_screen.dart';
 import 'services/offline/sync_service.dart';
+import 'services/waagen_verbindung.dart';
 import 'theme.dart';
 
 // TODO(Michael): Diese Werte stammen aus dem bestehenden Rezept-App-Projekt.
@@ -20,6 +21,8 @@ Future<void> main() async {
   // und offline vorgenommene Änderungen bei Wiederverbindung automatisch
   // nachgeholt werden (siehe services/offline/).
   await SyncService.instance.init();
+  // Eine Verbindung zur Waage für die ganze App (Schnellwaage und Verwiegung).
+  WaagenVerbindungsWaechter.instance.starten();
   runApp(const BackfuchsApp());
 }
 

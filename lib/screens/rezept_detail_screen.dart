@@ -148,13 +148,9 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
       ? '$_zielStueckzahl Stück'
       : '${_formatKg(_zielGewichtKg)} kg';
 
-  // Während der geführten Verwiegung nutzt diese die Waage; die Schnellwaage
-  // unten trennt dann ihre Verbindung zum Waagen-Knoten.
-  bool _verwiegungOffen = false;
   bool _schritteSichtbar = false;
 
   Future<void> _verwiegungOeffnen() async {
-    setState(() => _verwiegungOffen = true);
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => VerwiegungScreen(
@@ -166,7 +162,6 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
         ),
       ),
     );
-    if (mounted) setState(() => _verwiegungOffen = false);
   }
 
   @override
@@ -196,7 +191,7 @@ class _RezeptDetailScreenState extends State<RezeptDetailScreen> {
         ],
       ),
       // Schnellwaage: aktuelles Gewicht und Tara (nur in der Android-App).
-      bottomNavigationBar: SchnellWaage(aktiv: !_verwiegungOffen),
+      bottomNavigationBar: const SchnellWaage(),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

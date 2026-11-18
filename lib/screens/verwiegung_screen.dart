@@ -8,15 +8,15 @@ import 'package:flutter/material.dart';
 import '../models/rezept.dart';
 import '../services/verwiegung_service.dart';
 import '../services/waagen_einstellungen.dart';
+import '../services/waagen_verbindung.dart';
 import '../theme.dart';
 import '../verwiegung/lampen.dart';
 import '../verwiegung/rohstoffstamm.dart';
 import '../verwiegung/verwiege_plan.dart';
 import '../verwiegung/verwiege_sitzung.dart';
 import '../verwiegung/waage.dart';
+import '../verwiegung/waagen_dienst.dart';
 import '../verwiegung/waagen_protokoll.dart';
-import '../verwiegung/websocket_kanal.dart';
-import '../verwiegung/websocket_waage.dart';
 
 // Ampelfarben der Verwiegung (hell, damit die große Schrift gut lesbar bleibt).
 const _farbeWartet = Color(0xFFE0E0E0);
@@ -127,8 +127,11 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
       _simulation = sim;
       waage = sim;
     } else {
+      // Die Verbindung gehört der App (läuft schon, auch für die Schnellwaage):
+      // hier nur zuhören. Ein bereits vorliegender frischer Wert gilt sofort.
       _simulation = null;
-      waage = WebSocketWaage(adresse: _knotenAdresse, kanalFabrik: verbindeWebSocket);
+      waage = GeteilteWaage(waagenDienst);
+      _letzterWert = waagenDienst.letzter;
     }
     _waage = waage;
     waage.verbinden();
@@ -191,6 +194,9 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
     if (!kIsWeb) await WaagenEinstellungen.speichereSimulation(simulation);
     if (!mounted) return;
     _knotenAdresse = adresse;
+    // Die gemeinsame Verbindung nimmt die neue Adresse erst nach einem Neustart.
+    if (!kIsWeb) await waagenDienst.neuStarten();
+    if (!mounted) return;
     _waageEinrichten(simulation: kIsWeb || simulation);
     setState(() {});
   }
@@ -900,7 +906,7 @@ class _VerwiegungScreenState extends State<VerwiegungScreen> {
       text = 'Waage wird gestartet ...';
     } else if (frisch) {
       text = 'Waage verbunden · ${_knotenAdresse.host}';
-    } else if (waage is WebSocketWaage && waage.verbindung == WaagenVerbindung.verbunden) {
+    } else if (waage is GeteilteWaage && waage.verbunden) {
       text = 'Waagen-Knoten verbunden, aber die Waage sendet nichts';
     } else {
       text = '${waage.statusText} · ${_knotenAdresse.host}';
